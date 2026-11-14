@@ -2,6 +2,7 @@ import React from 'react';
 import { href } from '../lib/router.js';
 import { announce, haptic, useClock, useLayout, useNow } from '../lib/hooks.js';
 import { useStore } from '../lib/store.js';
+import { canSnapshot, saveSnapshot } from '../lib/snapshot.js';
 import { connection, nursery, soloStatus, soundLevels, tonight } from '../lib/sampleData.js';
 import { LensGlyph } from '../components/brand.jsx';
 import { Chip, Cta, Eyebrow, Note, Pill, Segmented, SliderBar, cardStyle, display, mono } from '../components/ui.jsx';
@@ -119,12 +120,13 @@ function TalkButton({ controls, height = 52, stacked = false, icon = true }) {
   );
 }
 
-function ControlButton({ on, onClick, height = 52, stacked = false, outline = false, icon, children }) {
+function ControlButton({ on, onClick, disabled, height = 52, stacked = false, outline = false, icon, children }) {
   return (
     <button
       type="button"
       aria-pressed={on}
       onClick={onClick}
+      disabled={disabled}
       style={{
         height,
         borderRadius: 'var(--radius-md)',
@@ -143,6 +145,43 @@ function ControlButton({ on, onClick, height = 52, stacked = false, outline = fa
       {icon}
       {children}
     </button>
+  );
+}
+
+/** Snapshot: saves the camera's current frame, and says how it went on the button. */
+function SnapshotButton({ cam, height, stacked }) {
+  const [status, setStatus] = React.useState('idle'); // idle | busy | saved | failed | none
+  const timer = React.useRef(null);
+  React.useEffect(() => () => clearTimeout(timer.current), []);
+
+  const settle = (next, message) => {
+    setStatus(next);
+    announce(message);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setStatus('idle'), 2500);
+  };
+
+  const take = async () => {
+    if (!canSnapshot(cam)) {
+      settle('none', `No video from ${cam.name} to save yet`);
+      return;
+    }
+    clearTimeout(timer.current);
+    setStatus('busy');
+    try {
+      const name = await saveSnapshot(cam);
+      haptic();
+      settle('saved', `Snapshot of ${cam.name} saved as ${name}`);
+    } catch {
+      settle('failed', `Couldn’t get a snapshot from ${cam.name}`);
+    }
+  };
+
+  const label = { idle: 'Snapshot', busy: 'Saving…', saved: 'Saved', failed: 'Couldn’t save', none: 'No video yet' }[status];
+  return (
+    <ControlButton onClick={take} disabled={status === 'busy'} height={height} stacked={stacked} icon={<SnapshotIcon size={20} />}>
+      {label}
+    </ControlButton>
   );
 }
 
@@ -412,7 +451,7 @@ function SoloLive({ cam, inRoom, scenario }) {
             <TalkButton controls={controls} height={72} stacked />
             <ControlButton on={!!controls.lullaby} onClick={controls.toggleLullaby} height={72} stacked icon={<MusicIcon size={20} />}>Lullaby</ControlButton>
             <ControlButton on={controls.nightLight} onClick={controls.toggleNightLight} height={72} stacked icon={<BulbIcon size={20} />}>Night light</ControlButton>
-            <ControlButton height={72} stacked icon={<SnapshotIcon size={20} />}>Snapshot</ControlButton>
+            <SnapshotButton cam={cam} height={72} stacked />
           </div>
         </>
       )}

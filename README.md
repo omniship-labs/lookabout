@@ -35,6 +35,7 @@ src/
    ├─ sampleData.js      the design's sample content (stands in for live data)
    ├─ store.js           settings (localStorage) + cameras
    ├─ camera.js          this device's camera and mic
+   ├─ snapshot.js        save a frame from a camera added by address
    └─ router.js, hooks.js
 ```
 

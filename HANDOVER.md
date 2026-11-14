@@ -133,18 +133,40 @@ Nothing is built. Suggested shape, to be confirmed while building:
 
 ### E. Web app loose ends
 
-- [ ] **E1. Unwired buttons**: Snapshot, clip Save / Share / Delete,
+- [ ] **E1. Unwired buttons**: clip Save / Share / Delete,
       "Sign in with Google", Status page, Try again / Connection help.
+      Snapshot is wired for cameras added by address (`src/lib/snapshot.js`
+      downloads the board's `/snapshot.jpg`); hub cameras say "No video yet"
+      until the hub can hand over a frame (B4).
 - [ ] **E2. Hub-dependent add flows** (USB on hub, RTSP, Eufy, Nest, Ring,
       Wyze, Tesla) are forms that add a sample camera. Wire to the hub (B).
-- [ ] **E3. Deploy**: no GitHub Pages workflow yet (see `../murmur`'s
-      `deploy.yml`). The repo is not a git repository yet either.
+- [ ] **E3. Deploy**: no GitHub Pages workflow yet. Port
+      `.github/workflows/deploy.yml` from `murmur` (same in `envdock` and
+      `project-template`): it runs `npm ci` with
+      `NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}` and `packages: read`,
+      then publishes `dist`. Pages must be switched on in the repo settings.
+      Done: a push to `main` publishes the web app.
 - [ ] **E4. https vs plain-http boards**: a deployed https page can't show
       `http://` board streams or send them updates. Goes away once streams
       come through the hub; until then document "open over http on your LAN".
 - [ ] **E5. Design-system gaps**: Switch, Badge, Card, Input are local in
       `src/components/ui.jsx` because design-beacon 0.1.0 doesn't export
       them. Promote upstream or keep local.
+- [ ] **E6. Build check on pull requests.** Nothing runs on a PR today.
+      Add a workflow that runs `npm ci` and `npm run build` (same token
+      setup as E3). Done: a PR that breaks the build shows a red check.
+- [ ] **E7. `npm ci` in Claude cloud sessions.** It fails with 401 because
+      the environment has no `NODE_AUTH_TOKEN`. Add one (a GitHub token with
+      `read:packages`) in the environment's settings. Until then, clone the
+      public `omniship-labs/design-beacon` repo and `npm install --no-save`
+      from that folder; the package is plain source with no build step.
+- [ ] **E8. Snapshot on a real board.** Tested only against a stand-in
+      camera. After A3, press Snapshot while the stream is playing. Done: a
+      JPEG of the current frame downloads from an ESP32 and from a Pi.
+- [ ] **E9. Snapshot for hub cameras.** They show "No video yet". Once the
+      hub API exists (B4), fetch the frame from the hub in
+      `src/lib/snapshot.js`. Also add Snapshot to the tablet and desktop
+      live layouts, which have no button for it.
 
 ### F. Security (before anyone outside the house uses it)
 
