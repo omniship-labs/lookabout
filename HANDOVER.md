@@ -1,6 +1,6 @@
 # Lookabout — handover
 
-Written 13 Nov 2026. Read the root `README.md` first for layout and commands;
+Written 13 Nov 2026, updated 14 Nov 2026. Read the root `README.md` first for layout and commands;
 each of `firmware/esp32`, `firmware/rpi`, `ios`, `android` has its own README.
 
 ## Where things stand
@@ -140,21 +140,25 @@ Nothing is built. Suggested shape, to be confirmed while building:
       until the hub can hand over a frame (B4).
 - [ ] **E2. Hub-dependent add flows** (USB on hub, RTSP, Eufy, Nest, Ring,
       Wyze, Tesla) are forms that add a sample camera. Wire to the hub (B).
-- [ ] **E3. Deploy**: no GitHub Pages workflow yet. Port
-      `.github/workflows/deploy.yml` from `murmur` (same in `envdock` and
-      `project-template`): it runs `npm ci` with
-      `NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}` and `packages: read`,
-      then publishes `dist`. Pages must be switched on in the repo settings.
-      Done: a push to `main` publishes the web app.
+- [ ] **E3. Deploy**: `.github/workflows/deploy.yml` builds on a push to
+      `main` and publishes `dist` to GitHub Pages; the build uses a relative
+      base so it works under `/lookabout/`. It was written here, not copied
+      from `murmur` (that repo wasn't readable from the session), so compare
+      the two. Its first run is the merge of pull request 2; it can only
+      publish once Pages is switched on (Settings → Pages → Source: GitHub
+      Actions), then re-run it from the Actions tab. `npm ci` already works
+      in Actions (see E6). Done: a push to `main` publishes the web app.
 - [ ] **E4. https vs plain-http boards**: a deployed https page can't show
       `http://` board streams or send them updates. Goes away once streams
       come through the hub; until then document "open over http on your LAN".
 - [ ] **E5. Design-system gaps**: Switch, Badge, Card, Input are local in
       `src/components/ui.jsx` because design-beacon 0.1.0 doesn't export
       them. Promote upstream or keep local.
-- [ ] **E6. Build check on pull requests.** Nothing runs on a PR today.
-      Add a workflow that runs `npm ci` and `npm run build` (same token
-      setup as E3). Done: a PR that breaks the build shows a red check.
+- [x] **E6. Build check on pull requests.** `.github/workflows/build.yml`
+      runs `npm ci` and `npm run build` on every PR (check name `web`). It
+      went green on pull request 2, so Actions can read the design-beacon
+      package. Not seen red on a broken build yet. Optional follow-up: make
+      `web` a required check on `main` (Settings → Branches).
 - [ ] **E7. `npm ci` in Claude cloud sessions.** It fails with 401 because
       the environment has no `NODE_AUTH_TOKEN`. Add one (a GitHub token with
       `read:packages`) in the environment's settings. Until then, clone the
@@ -165,8 +169,9 @@ Nothing is built. Suggested shape, to be confirmed while building:
       JPEG of the current frame downloads from an ESP32 and from a Pi.
 - [ ] **E9. Snapshot for hub cameras.** They show "No video yet". Once the
       hub API exists (B4), fetch the frame from the hub in
-      `src/lib/snapshot.js`. Also add Snapshot to the tablet and desktop
-      live layouts, which have no button for it.
+      `src/lib/snapshot.js`. The button itself is now on every layout: the
+      tablet and desktop live screens have it under Hold to talk / Lullaby,
+      for the main view.
 
 ### F. Security (before anyone outside the house uses it)
 
@@ -178,6 +183,16 @@ Nothing is built. Suggested shape, to be confirmed while building:
 - [ ] **F3.** Android allows cleartext traffic app-wide for LAN boards;
       narrow it once streams go through the hub.
 - [ ] **F4.** Signed firmware images / rollback protection for updates.
+
+## What to pick up next
+
+Everything left needs hardware, an owner decision or an account:
+
+1. Switch GitHub Pages on, then re-run the Deploy workflow (finishes E3).
+2. Decide the hub's language (B9), which unblocks B1 onwards and with it the
+   remaining unwired buttons (E1), hub add flows (E2) and hub snapshots (E9).
+3. Flash a real ESP32-S3 (A1–A7), then Snapshot on a real board (E8).
+4. Add `NODE_AUTH_TOKEN` to the Claude cloud environment (E7).
 
 ## How to run each piece
 
