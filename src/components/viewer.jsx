@@ -1,7 +1,8 @@
 import React from 'react';
 import { href } from '../lib/router.js';
 import { useLayout } from '../lib/hooks.js';
-import { useStore } from '../lib/store.js';
+import { hubLine, useStore } from '../lib/store.js';
+import { hubMjpegUrl, hubWebrtc } from '../lib/hub.js';
 import { CRY_BAR_THRESHOLD, LEVEL_THRESHOLD, connection } from '../lib/sampleData.js';
 import { AppIcon, LensWordmark } from './brand.jsx';
 import { Bar, Eyebrow, Pill, display, mono } from './ui.jsx';
@@ -14,7 +15,8 @@ import { BellIcon, ClockIcon, GridIcon, PlayIcon, PlusIcon, SpeakerIcon, SwapIco
  * Feed — fills its tile with the camera's video when the camera has a
  * stream address on your network, otherwise shows the placeholder label.
  */
-export function Feed({ src, label, small = false }) {
+export function Feed({ src, cam, label, small = false }) {
+  if (cam && cam.hub) return <HubVideo cam={cam} small={small} />;
   if (src) {
     return (
       <img
@@ -41,12 +43,55 @@ export function Feed({ src, label, small = false }) {
   );
 }
 
+const fill = { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' };
+const WEBRTC_WAIT_MS = 10000;
+
+/**
+ * Live video for a camera that comes through the home hub. WebRTC first;
+ * if no picture arrives, the hub's MJPEG stream instead. Small tiles of
+ * MJPEG cameras (ESP32, Pi) use MJPEG straight away, which costs the hub
+ * nothing, where WebRTC would make it re-encode every tile.
+ */
+function HubVideo({ cam, small }) {
+  const hub = useStore().hub;
+  const video = React.useRef(null);
+  const [mode, setMode] = React.useState(small && cam.kind === 'mjpeg' ? 'mjpeg' : 'webrtc');
+
+  React.useEffect(() => {
+    if (mode !== 'webrtc' || !hub) return undefined;
+    let pc = null;
+    let closed = false;
+    const fallBack = () => !closed && setMode('mjpeg');
+    const timer = setTimeout(() => {
+      if (!video.current || !video.current.videoWidth) fallBack();
+    }, WEBRTC_WAIT_MS);
+    hubWebrtc(hub, cam.id, (stream) => {
+      if (!closed && video.current) video.current.srcObject = stream;
+    })
+      .then((made) => {
+        pc = made;
+        if (closed) pc.close();
+        else pc.addEventListener('connectionstatechange', () => pc.connectionState === 'failed' && fallBack());
+      })
+      .catch(fallBack);
+    return () => {
+      closed = true;
+      clearTimeout(timer);
+      if (pc) pc.close();
+    };
+  }, [mode, hub, cam.id]);
+
+  if (!hub) return null;
+  if (mode === 'mjpeg') return <img src={hubMjpegUrl(hub, cam.id)} alt="" style={fill} />;
+  return <video ref={video} autoPlay muted playsInline style={fill} />;
+}
+
 /**
  * VideoTile — the main feed. Always dark inside, so overlays stay legible in
  * the daytime light viewer too.
  */
 export const VideoTile = React.forwardRef(function VideoTile(
-  { label, height = 250, radius = 'var(--radius-lg)', flat = false, src, placeholder = 'LIVE VIDEO', fadeKey, children, style },
+  { label, height = 250, radius = 'var(--radius-lg)', flat = false, src, cam, placeholder = 'LIVE VIDEO', fadeKey, children, style },
   ref
 ) {
   return (
@@ -67,7 +112,7 @@ export const VideoTile = React.forwardRef(function VideoTile(
       }}
     >
       <div key={fadeKey} className={fadeKey ? 'lk-fade' : undefined} style={{ position: 'absolute', inset: 0 }}>
-        <Feed src={src} label={placeholder} />
+        <Feed src={src} cam={cam} label={placeholder} />
       </div>
       {children}
     </div>
@@ -136,7 +181,7 @@ export function CameraTile({ cam, to, height = 128, radius = 'var(--radius-md)',
           </span>
         </span>
       ) : (
-        <Feed src={cam.streamUrl} label="FEED" small />
+        <Feed src={cam.streamUrl} cam={cam} label="FEED" small />
       )}
       {cam.motion && !down ? <Pill tone="accent" small style={{ position: 'absolute', top: 8, left: 8 }}>MOTION</Pill> : null}
       <span
@@ -412,10 +457,10 @@ function Sidebar({ active }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 14, borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
         <Eyebrow>HOME HUB</Eyebrow>
         <span style={{ fontSize: 13, color: 'var(--text-strong)' }}>
-          {s.hubPaired ? `Recording · ${s.keepDays} days kept` : 'Not set up · live only'}
+          {s.hubPaired ? hubLine(s) : 'Not set up · live only'}
         </span>
         <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-          {online} cameras · {connection.kind} {connection.latency}
+          {s.hubPaired ? `${online} online` : `${online} cameras · ${connection.kind} ${connection.latency}`}
         </span>
       </div>
       <a

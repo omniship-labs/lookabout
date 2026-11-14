@@ -1,0 +1,21 @@
+# Lookabout home hub.   docker compose up -d --build
+services:
+  hub:
+    build: .
+    image: lookabout-hub
+    container_name: lookabout-hub
+    restart: unless-stopped
+    # Host networking: the hub has to announce itself on the home network
+    # (mDNS) and reach cameras there, and live video uses port 8555.
+    network_mode: host
+    environment:
+      LOOKABOUT_HUB_NAME: lookabout-hub   # name shown in Lookabout
+      LOOKABOUT_HUB_PORT: "8787"
+    volumes:
+      - hub-data:/data                    # settings, paired viewers, recordings
+    # USB webcams plugged into this machine: list each one here.
+    # devices:
+    #   - /dev/video0:/dev/video0
+
+volumes:
+  hub-data:

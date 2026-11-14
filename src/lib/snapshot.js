@@ -2,8 +2,11 @@
 //
 // Cameras added by address (ESP32, Raspberry Pi) serve one JPEG frame at
 // /snapshot.jpg with cross-origin access allowed, so the viewer can fetch it
-// and hand it to the browser as a download. Cameras that come through the hub
-// have no frame to fetch until the hub exists.
+// and hand it to the browser as a download. Cameras that come through the
+// home hub give their frame through the hub, which checks this viewer's key.
+
+import { getState } from './store.js';
+import { hubFrame } from './hub.js';
 
 const TIMEOUT_MS = 5000;
 
@@ -18,7 +21,19 @@ export function snapshotName(camName, date = new Date()) {
 
 /** True when this camera has a frame the viewer can fetch. */
 export function canSnapshot(cam) {
-  return !!(cam && cam.address);
+  return !!(cam && (cam.address || cam.hub));
+}
+
+async function boardFrame(cam) {
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch(`${cam.address}/snapshot.jpg?t=${Date.now()}`, { cache: 'no-store', signal: abort.signal });
+    if (!res.ok) throw new Error(`Camera answered ${res.status}`);
+    return await res.blob();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -27,16 +42,7 @@ export function canSnapshot(cam) {
  */
 export async function saveSnapshot(cam) {
   if (!canSnapshot(cam)) throw new Error('No video from this camera yet');
-  const abort = new AbortController();
-  const timer = setTimeout(() => abort.abort(), TIMEOUT_MS);
-  let blob;
-  try {
-    const res = await fetch(`${cam.address}/snapshot.jpg?t=${Date.now()}`, { cache: 'no-store', signal: abort.signal });
-    if (!res.ok) throw new Error(`Camera answered ${res.status}`);
-    blob = await res.blob();
-  } finally {
-    clearTimeout(timer);
-  }
+  const blob = cam.hub ? await hubFrame(getState().hub, cam.id) : await boardFrame(cam);
   if (!blob.size) throw new Error('Camera sent an empty frame');
 
   const name = snapshotName(cam.name);
