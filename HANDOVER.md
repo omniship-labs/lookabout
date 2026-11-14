@@ -133,8 +133,11 @@ Nothing is built. Suggested shape, to be confirmed while building:
 
 ### E. Web app loose ends
 
-- [ ] **E1. Unwired buttons**: Snapshot, clip Save / Share / Delete,
+- [ ] **E1. Unwired buttons**: clip Save / Share / Delete,
       "Sign in with Google", Status page, Try again / Connection help.
+      Snapshot is wired for cameras added by address (`src/lib/snapshot.js`
+      downloads the board's `/snapshot.jpg`); hub cameras say "No video yet"
+      until the hub can hand over a frame (B4).
 - [ ] **E2. Hub-dependent add flows** (USB on hub, RTSP, Eufy, Nest, Ring,
       Wyze, Tesla) are forms that add a sample camera. Wire to the hub (B).
 - [ ] **E3. Deploy**: no GitHub Pages workflow yet (see `../murmur`'s
