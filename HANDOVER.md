@@ -1,6 +1,6 @@
 # Lookabout — handover
 
-Written 13 Nov 2026, updated 14 Nov 2026 (home hub). Read the root `README.md` first for layout and commands;
+Written 13 Nov 2026, updated 14 Nov 2026 (home hub built: section B; accounts plan added: section G). Read the root `README.md` first for layout and commands;
 each of `firmware/esp32`, `firmware/rpi`, `ios`, `android` has its own README.
 
 ## Where things stand
@@ -39,6 +39,13 @@ screens only.
 - The hub is written in **Python**, with go2rtc beside it for video (B9).
 - Sibling repos (`../murmur`, `../envdock`, `../home`) are the convention
   reference. Web UI uses `@omniship-labs/design-beacon` tokens, never raw hex.
+- **Accounts and access (decided 14 Nov 2026, plan only, nothing built):** the
+  public Pages site has no accounts and no video. It explains the project,
+  flashes boards and guides hub setup. Sign-in, households, roles and
+  per-camera access live in the **hub**, which serves the same React app as the
+  owner's own dashboard at their own URL. A client-only login on Pages can't
+  gate anything (the site has no backend; board streams are plain http). See
+  section G.
 
 ## Task list
 
@@ -193,10 +200,114 @@ real RTSP camera or a USB webcam yet.
       (`/api/cameras/<id>/snapshot.jpg`). Seen working with the stand-in
       camera.
 
+### G. Accounts, hub install and remote access (planned, not started)
+
+Goal: "I don't want everyone to see everything." Decisions so far:
+
+- Household with roles: members are **admin** or **viewer**; each camera has
+  an access list; admins see all. Invite by email, active on first matching
+  sign-in.
+- Sign-in methods: **local accounts** (passkey or password) as the default so a
+  LAN-only hub works, plus **Google and Apple** as optional providers where each
+  owner brings their own keys through a guided wizard. No shared OmniShip login
+  service (it would break "nothing is uploaded").
+- Remote access is **opt-in, off by default**. Offer **Cloudflare Tunnel** and
+  **Tailscale** equally (wizard asks "sharing with family or just me?").
+  Remote video falls back to https (MSE/HLS) in v1; **TURN is later**. Port
+  forwarding is docs only.
+- Hub install in v1: **Docker compose generator plus an `install.sh`**; an SD
+  card image is later. Apple sign-in is **in v1** alongside Google.
+- Hub runtime (B9) is **Python** (decided 14 Nov 2026, built in `hub/`); keep
+  the API contract language-neutral.
+- Hub-to-internet checks in wizards are allowed, but each check names the host
+  it contacts and sends only what it needs, shown before it runs.
+
+Tasks, in build order:
+
+- [ ] **G1. Contract doc** `docs/hub-auth.md`: `POST /auth/login/{provider}`,
+      `GET /me`, `GET /household`, `POST /household/invites`,
+      `PATCH /household/members/{id}`, `GET/PUT /admin/auth/providers`,
+      `GET /cameras` (filtered by caller), stream/snapshot/clip authorisation,
+      and the wizard verify endpoints
+      (`POST /setup/{flow}/{step}/verify`). Done: reviewed by the owner.
+- [ ] **G2. Wizard component** (web): a shared step UI. Each step has a guide
+      (numbered substeps, copy buttons, deep links), the thing to do, an
+      automated check or manual confirm, a state (`todo`, `checking`,
+      `passed`, `failed`), a plain-language failure reason with Retry, and
+      progress saved on the hub. Later steps stay locked until the previous
+      one passes. Done: used by the hub-setup flow.
+- [ ] **G3. Hub-mode sign-in and gating** (web): sign-in screen showing only
+      the providers the owner enabled; route guard (viewer routes need a
+      session; Zones, Devices, Add camera and Household need admin); one
+      `useVisibleCameras()` hook replacing direct reads of `s.cameras` in
+      `Cameras.jsx`, `Live.jsx` (`houseCam`, the `/live` nursery room, tablet
+      list) and `viewer.jsx` (online count); events and clips filtered by
+      visible cameras; a "No access" state for a direct `/live/<id>` link to a
+      camera the user can't see. Until the hub exists, a clearly labelled
+      **preview** provider signs in as sample members. It is **not** security.
+      Done: signing in as a viewer shows only their cameras, in light and
+      dark, at phone and desktop widths.
+- [ ] **G4. Account and Household screens** (web): Settings gets an Account
+      section (signed in as, role, Household, Sign out). Household lists
+      members with role pills; admins open a member to change role, tick
+      cameras, or remove; an Invite field adds a pending member. Replace the
+      "Second phone" viewers sample in `Devices` once the hub is real.
+- [ ] **G5. Pages landing flow** (web): when not served by a hub, `Start`
+      becomes two cards, "Flash a camera" (existing `#/flash`) and "Set up
+      your hub". The hub card is the install wizard (G6) and an "Open my hub"
+      field that remembers the hub URL. Document E4: live viewing happens on
+      the hub's own address.
+- [ ] **G6. Hub install wizard and installer.** Pages generates a
+      `docker-compose.yml` and a one-line command from a few answers (Pi
+      model, recordings location, remote access yes/no). `install.sh` (kept in
+      the repo, pinned to a release URL, short and readable) checks arm64,
+      disk and Docker, installs Docker if missing, creates the data folder,
+      starts the hub and prints its address. Needs the hub image (B1) on GHCR
+      and a hub status endpoint (version, free disk, mDNS advertised, volume
+      writable). An https Pages site can't call `http://lookabout.local`
+      (mixed content), so step verification runs on the hub's own first-run
+      page, with a manual confirm on Pages. Hub first run shows a one-time
+      setup code; entering it creates the first admin. Done: a fresh Pi goes
+      from nothing to a signed-in admin using only the wizard.
+- [ ] **G7. Remote access wizard** (hub dashboard): Cloudflare Tunnel
+      (`cloudflared` sidecar) and Tailscale paths. Checks: domain on
+      Cloudflare, tunnel connected, public URL serves a valid certificate, hub
+      reaches itself from outside, and an unauthenticated request to the public
+      camera API gets 401 and no video. Refuses to enable until an admin with a
+      strong credential exists and per-camera auth is enforced on every stream
+      path. While on, the dashboard shows an "exposed to internet" banner.
+      Needs rate limiting and lockout, secure cookies, CSRF and origin checks,
+      and a sign-in audit log. Video falls back to https (MSE/HLS).
+- [ ] **G8. Google sign-in wizard.** Blocker if there's no public https URL
+      (Google rejects `.local` and private IPs as redirect URIs). Steps: show
+      the redirect URL with copy, link to the Google Cloud console, paste
+      client ID and secret, format check, fetch Google's discovery document,
+      "Test sign-in" shows the verified email returned. Secrets are encrypted
+      on the hub volume and never sent back to the browser.
+- [ ] **G9. Apple sign-in wizard.** Needs a paid Apple Developer account per
+      owner, a Services ID, Team ID, Key ID and a `.p8` key, on a real https
+      domain. The hub signs the client secret itself and regenerates it before
+      it expires (Apple allows at most 6 months). Checks: values parse, Apple's
+      token endpoint accepts the secret, test sign-in shows the identity,
+      expiry is shown. Mark "advanced" in the UI. Also: App Store guideline 4.8
+      requires Sign in with Apple (or an equivalent) in the iOS app if Google
+      sign-in is offered; fold into D5/D6.
+- [ ] **G10. Setup health panel** on the hub dashboard: every wizard flow with
+      a green or red state, re-run checks on demand, so an expired key or a
+      dropped tunnel shows which step failed.
+
+Dependencies: G1 to G5 can be built and checked without the hub. G6 needs B1;
+G7 to G10 need the hub and G1. Building anything in the web app needs
+`npm install` to work in the session (see E7).
+
 ### F. Security (before anyone outside the house uses it)
 
 - [ ] **F1.** Board streams and `POST /api/update` have **no sign-in**:
       anyone on the LAN can watch or push firmware. Close with pairing keys.
+      This is now also a **hard blocker for G7**: remote access must not be
+      switchable on until the hub authorises every stream and API path per
+      camera. Boards stay LAN-only; only the hub is ever exposed, and it
+      proxies them.
 - [ ] **F2.** The "Lookabout-Setup" Wi-Fi is open and the Wi-Fi password is
       sent over plain http to the board. Acceptable for setup on a bench;
       revisit.
@@ -219,6 +330,9 @@ In order:
 3. Switch GitHub Pages on, then re-run the Deploy workflow (finishes E3).
 4. Flash a real ESP32-S3 (A1–A7), then Snapshot on a real board (E8).
 5. Add `NODE_AUTH_TOKEN` to the Claude cloud environment (E7).
+6. Accounts and camera gating (section G). Start with G1 (contract doc) and G2
+   (wizard component). The hub's present pairing keys (B3) are what G replaces
+   with accounts.
 
 ## How to run each piece
 
