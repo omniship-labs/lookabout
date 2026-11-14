@@ -19,13 +19,20 @@ browser can't set headers (<img>, downloads), as "?token=<token>":
     GET    /api/cameras/<id>/stream.mjpeg   live video as MJPEG
     POST   /api/cameras/<id>/webrtc         live video: SDP offer in, SDP answer out
     GET    /api/usb                         webcams plugged into the hub
+    GET    /api/cameras/<id>/zones          motion zones {zones, sensitivity}
+    PUT    /api/cameras/<id>/zones
     GET    /api/events?since=&kind=&limit=
+    DELETE /api/events/<id>                 the event and its clip
+    GET    /api/clips/<name>                a clip (.mp4) or its thumbnail (.jpg)
+    GET    /api/settings                    keep_days, recording, motion, cry, cry_sensitivity
+    PATCH  /api/settings
     GET    /api/viewers
     PATCH  /api/viewers/<id>                rename
     DELETE /api/viewers/<id>                unpair: its key stops working
 """
 
 import json
+import os
 import shutil
 import socket
 import time
@@ -44,9 +51,13 @@ MAX_BODY = 256 * 1024
 class Hub:
     """The parts of the hub, bundled for the request handler."""
 
-    def __init__(self, store, pairing, bridge, monitor, name, port, data_dir):
+    def __init__(self, store, pairing, bridge, monitor, name, port, data_dir, clips=None):
         self.store, self.pairing, self.bridge, self.monitor = store, pairing, bridge, monitor
         self.name, self.port, self.data_dir = name, port, data_dir
+        self.clips = clips            # recordings and event clips
+        self.watchers = None          # recording, motion and cry workers, set once the hub is built
+        self.classifier = None        # cry classifier, or None when this machine can't run it
+        self.classifier_problem = "not loaded"
 
     def address(self):
         found = local_addresses()
@@ -60,6 +71,8 @@ class Hub:
             "cameras": len(self.store.cameras()),
             "viewers": len(self.store.viewers()),
             "bridge": self.bridge.available,
+            "recording": bool(self.watchers) and self.store.settings()["recording"],
+            "cry_detection": self.classifier is not None,
             "free_bytes": shutil.disk_usage(self.data_dir).free,
         }
 
@@ -93,7 +106,32 @@ def event_json(event):
         "ended": event["ended"],
         "detail": event["detail"],
         "clip": event["clip"],
+        "thumb": f"{event['id']}.jpg" if event["clip"] else None,
     }
+
+
+def clean_zones(data):
+    """Checks zones sent by a viewer. Corners are fractions (0..1) of the frame."""
+    zones, sensitivity = data.get("zones"), data.get("sensitivity", 60)
+    if not isinstance(zones, list) or len(zones) > 12 or not isinstance(sensitivity, (int, float)):
+        raise Reply(400, "Those zones can't be saved.")
+    cleaned = []
+    for i, zone in enumerate(zones):
+        points = zone.get("points") if isinstance(zone, dict) else None
+        if not isinstance(points, list) or not 3 <= len(points) <= 12:
+            raise Reply(400, "A zone needs at least three corners.")
+        try:
+            points = [[min(max(float(x), 0.0), 1.0), min(max(float(y), 0.0), 1.0)] for x, y in points]
+        except (TypeError, ValueError):
+            raise Reply(400, "Those zones can't be saved.") from None
+        cleaned.append({
+            "id": str(zone.get("id") or f"zone-{i + 1}")[:24],
+            "name": str(zone.get("name") or f"Zone {i + 1}").strip()[:24],
+            "action": "record only" if zone.get("action") == "record only" else "alert + record",
+            "tone": "info" if zone.get("tone") == "info" else "accent",
+            "points": points,
+        })
+    return cleaned, int(min(max(sensitivity, 0), 100))
 
 
 def make_handler(hub):
@@ -178,13 +216,13 @@ def make_handler(hub):
             except (BrokenPipeError, ConnectionResetError, socket.timeout):
                 self.close_connection = True
 
-        do_GET = do_POST = do_PATCH = do_DELETE = _handle
+        do_GET = do_POST = do_PATCH = do_PUT = do_DELETE = _handle
 
         def do_OPTIONS(self):
             self.send_response(204)
             self._cors()
-            self.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type, Range")
             # Lets a page served from elsewhere (the hosted web app) reach a hub on the home network.
             self.send_header("Access-Control-Allow-Private-Network", "true")
             self.send_header("Access-Control-Max-Age", "600")
@@ -210,7 +248,9 @@ def make_handler(hub):
             viewer = self._viewer()
             match route:
                 case ("GET", "cameras"):
-                    self._json({"cameras": [public_camera(c) for c in store.cameras()]})
+                    self._json({"cameras": [
+                        {**public_camera(c), "motion": bool(store.open_event("motion", c["id"]))}
+                        for c in store.cameras()]})
                 case ("POST", "cameras"):
                     self._add_camera()
                 case ("POST", "cameras", "test"):
@@ -224,7 +264,36 @@ def make_handler(hub):
                     store.remove_camera(camera_id)
                     hub.monitor.forget(camera_id)
                     bridge.remove(camera_id, store.cameras())
+                    self._watch()
                     self._json({"removed": camera_id})
+                case ("GET", "cameras", camera_id, "zones"):
+                    self._camera(camera_id)
+                    self._json(store.zones(camera_id))
+                case ("PUT", "cameras", camera_id, "zones"):
+                    self._camera(camera_id)
+                    store.set_zones(camera_id, *clean_zones(self._data()))
+                    if hub.watchers:
+                        hub.watchers.refresh(camera_id)
+                    self._json(store.zones(camera_id))
+                case ("DELETE", "events", event_id):
+                    event = store.event(int(event_id)) if event_id.isdigit() else None
+                    if not event:
+                        raise Reply(404, "The hub has no such event.")
+                    if hub.clips:
+                        hub.clips.remove(event)
+                    store.remove_event(event["id"])
+                    self._json({"removed": event["id"]})
+                case ("GET", "clips", name):
+                    self._file(hub.clips.path(name) if hub.clips else None)
+                case ("GET", "settings"):
+                    self._json(store.settings())
+                case ("PATCH", "settings"):
+                    settings = store.update_settings(self._data())
+                    if settings is None:
+                        raise Reply(400, "That setting can't be saved.")
+                    if hub.watchers:
+                        hub.watchers.refresh()
+                    self._json(settings)
                 case ("GET", "cameras", camera_id, "snapshot.jpg"):
                     self._camera(camera_id)
                     self._send(200, "image/jpeg", bridge.frame(camera_id))
@@ -251,6 +320,52 @@ def make_handler(hub):
                     self._json({"removed": viewer_id})
                 case _:
                     raise Reply(404, "Not found.")
+
+        def _watch(self):
+            if hub.watchers:
+                hub.watchers.sync()
+
+        def _file(self, path):
+            """Sends a clip or thumbnail, honouring Range so video can be scrubbed."""
+            if not path:
+                raise Reply(404, "The hub no longer has that clip.")
+            size = os.path.getsize(path)
+            first, last = 0, size - 1
+            ranged = (self.headers.get("Range") or "").strip()
+            if ranged.startswith("bytes=") and "," not in ranged:
+                low, _, high = ranged[6:].partition("-")
+                try:
+                    if low:
+                        first, last = int(low), min(int(high), last) if high else last
+                    else:
+                        first = max(0, size - int(high))
+                except ValueError:
+                    first, last = 0, size - 1
+                if first > last or first >= size:
+                    self.send_response(416)
+                    self.send_header("Content-Range", f"bytes */{size}")
+                    self.send_header("Content-Length", "0")
+                    self._cors()
+                    self.end_headers()
+                    return
+                self.send_response(206)
+                self.send_header("Content-Range", f"bytes {first}-{last}/{size}")
+            else:
+                self.send_response(200)
+            self.send_header("Content-Type", "video/mp4" if path.endswith(".mp4") else "image/jpeg")
+            self.send_header("Content-Length", str(last - first + 1))
+            self.send_header("Accept-Ranges", "bytes")
+            self._cors()
+            self.end_headers()
+            with open(path, "rb") as f:
+                f.seek(first)
+                left = last - first + 1
+                while left > 0:
+                    chunk = f.read(min(65536, left))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    left -= len(chunk)
 
         def _name(self):
             name = str(self._data().get("name") or "").strip()[:40]
@@ -290,6 +405,7 @@ def make_handler(hub):
                 if bridge.available:  # without go2rtc the camera is still listed, just without video
                     store.remove_camera(camera["id"])
                     raise
+            self._watch()
             self._json(public_camera(camera), 201)
 
         def _events(self):
