@@ -1,9 +1,15 @@
 """Motion detection by comparing small greyscale frames, inside drawn zones.
 
-Each frame (160x120) is compared with a slowly updating picture of the
-empty scene. A zone has motion when enough of its pixels differ for two
-frames in a row. With no zones drawn the whole frame is one zone.
+Each frame (160x120) is compared with the one half a second before it. A
+zone has motion when enough of its pixels differ for two frames in a row.
+With no zones drawn the whole frame is one zone.
+
+Comparing with a recent frame rather than a remembered "empty scene" means
+something that stops (a parked car) or was there from the start is not
+reported as motion for ever after.
 """
+
+from collections import deque
 
 import numpy as np
 
@@ -12,7 +18,7 @@ FRAME_BYTES = WIDTH * HEIGHT
 FPS = 4
 PIXEL_CHANGE = 22          # grey levels (of 255) a pixel must move to count as changed
 SCENE_CHANGE = 0.5         # more of the frame than this changing at once is a light going on, not motion
-BACKGROUND_RATE = 0.05     # how fast the empty-scene picture follows the camera
+FRAMES_BACK = 2            # compare with the frame this many back (half a second at 4 fps)
 FRAMES_TO_CONFIRM = 2
 QUIET_SECONDS = 8          # motion is over after this long without any
 LONGEST_EVENT = 120        # a scene that never settles (a tree in the wind) gets one event, not an endless one
@@ -45,21 +51,22 @@ class MotionDetector:
         if not self.zones:
             self.zones = [("", np.ones((HEIGHT, WIDTH), dtype=bool))]
         self.needed = share_needed(sensitivity)
-        self.background = None
+        self.earlier = deque(maxlen=FRAMES_BACK)
         self.streak = [0] * len(self.zones)
 
     def feed(self, frame):
         """Takes one frame (HEIGHT x WIDTH, uint8). Returns the names of zones with motion right now."""
-        frame = frame.astype(np.float32)
-        if self.background is None:
-            self.background = frame
+        frame = frame.astype(np.int16)
+        if not self.earlier:
+            self.earlier.append(frame)
             return []
-        changed = np.abs(frame - self.background) > PIXEL_CHANGE
+        changed = np.abs(frame - self.earlier[0]) > PIXEL_CHANGE
+        self.earlier.append(frame)
         if changed.mean() > SCENE_CHANGE:
-            self.background = frame
+            self.earlier.clear()
+            self.earlier.append(frame)
             self.streak = [0] * len(self.zones)
             return []
-        self.background += BACKGROUND_RATE * (frame - self.background)
         moving = []
         for i, (name, mask) in enumerate(self.zones):
             self.streak[i] = self.streak[i] + 1 if changed[mask].mean() >= self.needed else 0

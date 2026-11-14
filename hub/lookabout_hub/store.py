@@ -73,6 +73,9 @@ class Store:
         with self._lock, self._db:
             self._db.executescript(SCHEMA)
 
+    def close(self):
+        self._db.close()
+
     def _all(self, sql, args=()):
         with self._lock:
             return [dict(r) for r in self._db.execute(sql, args).fetchall()]

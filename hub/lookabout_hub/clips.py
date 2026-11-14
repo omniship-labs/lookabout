@@ -19,7 +19,8 @@ import time
 
 SEGMENT_SECONDS = 60
 SEGMENT_NAME = "%Y%m%d-%H%M%S"
-BEFORE, AFTER = 4, 4           # seconds of video kept around an event
+BEFORE, AFTER = 8, 4           # seconds of video kept around an event (a clip starts on a keyframe, so up to one
+                               # keyframe gap of the lead-in is lost: 5 s for cameras the hub converts)
 LONGEST_CLIP = 180
 MIN_FREE_BYTES = 1 << 30       # start deleting old recordings below 1 GB free
 SWEEP_SECONDS = 600
@@ -60,7 +61,7 @@ class Clips:
 
     def request(self, event_id):
         """Cut a clip for an event that has just ended."""
-        self._jobs.put(event_id)
+        self._jobs.put((event_id, 1))
 
     def path(self, name):
         """Full path of a clip file by name, or None. Names never leave the clips folder."""
@@ -78,11 +79,15 @@ class Clips:
 
     def _work(self):
         while True:
-            event_id = self._jobs.get()
+            event_id, tries = self._jobs.get()
             try:
                 self.make(event_id)
             except Exception as err:  # one bad clip mustn't stop the rest
-                print(f"Could not make the clip for event {event_id}: {err}", file=sys.stderr)
+                if tries:  # e.g. the recording had only just started; its first piece isn't readable yet
+                    threading.Timer(20, self._jobs.put, [(event_id, tries - 1)]).start()
+                else:
+                    reason = str(err).strip().splitlines()[-1:] or ["unknown"]
+                    print(f"Could not make the clip for event {event_id}: {reason[0][:200]}", file=sys.stderr)
 
     def make(self, event_id, wait=time.sleep):
         event = self.store.event(event_id)
@@ -96,8 +101,11 @@ class Clips:
             wait(late)
 
         pieces = self.segments(event["camera_id"])
+        # A piece runs until the next one starts, and never much longer than a
+        # minute: after a restart the last piece of the earlier run is short.
         chosen = [(t, path) for i, (t, path) in enumerate(pieces)
-                  if t < end and (pieces[i + 1][0] if i + 1 < len(pieces) else float("inf")) > start]
+                  if t < end and min(pieces[i + 1][0] if i + 1 < len(pieces) else float("inf"),
+                                     t + SEGMENT_SECONDS + 5) > start and os.path.getsize(path) > 0]
         if not chosen:
             return None  # recording was off, or already deleted
         name = f"{event_id}.mp4"
@@ -108,8 +116,11 @@ class Clips:
                 listing.write("file '" + path.replace("'", "'\\''") + "'\n")
         try:
             done = subprocess.run(
+                # -ss after -i: the pieces are read from their start (cheap, nothing is decoded)
+                # and the copy begins at the first keyframe after the offset. Seeking instead
+                # lands mid-picture in these pieces and gives a clip that won't play.
                 ["ffmpeg", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0",
-                 "-ss", f"{offset:.2f}", "-i", listing.name, "-t", f"{end - start:.2f}",
+                 "-i", listing.name, "-ss", f"{offset:.2f}", "-t", f"{end - start:.2f}",
                  "-c:v", "copy", "-c:a", "aac", "-movflags", "+faststart", out],
                 capture_output=True, timeout=120)
         finally:
