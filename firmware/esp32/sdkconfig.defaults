@@ -1,0 +1,14 @@
+# Lookabout ESP32-S3 camera
+# Two app slots for over-Wi-Fi updates; needs 4 MB of flash or more.
+CONFIG_PARTITION_TABLE_TWO_OTA_LARGE=y
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+
+# UVC cameras have large configuration descriptors.
+CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=2048
+
+# Several viewers plus the setup page.
+CONFIG_LWIP_MAX_SOCKETS=16
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
+
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=6144
+CONFIG_FREERTOS_HZ=1000

@@ -1,0 +1,4 @@
+dependencies:
+  idf: ">=5.3"
+  espressif/usb_host_uvc: "^2.3.0"
+  espressif/mdns: "^1.4.0"

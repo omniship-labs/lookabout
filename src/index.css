@@ -1,0 +1,162 @@
+/* Lookabout app styles.
+   Colours, type, radii and motion all come from @omniship-labs/design-beacon
+   (imported in App.jsx). This file only adds:
+   - a few Lookabout aliases that differ between the light and dark themes,
+   - page basics, focus, and the handful of things inline styles can't do
+     (hover, keyframes, child dividers). */
+
+:root {
+  --lk-side: 20px; /* phone side padding; sits between space-4 and space-5 (open issue in the spec) */
+  --lk-col: 560px; /* phone layout max width on wider screens */
+
+  --lk-switch-on: var(--surface-inverse);
+  --lk-seg-on: var(--surface-card);
+  --lk-seg-shadow: 0 1px 2px rgba(14, 23, 38, 0.08);
+  --lk-seg-border: transparent;
+  --lk-card-shadow: var(--shadow-card);
+  --lk-raised-shadow: var(--shadow-raised);
+  --lk-tabbar: var(--surface-card);
+  --lk-strip-border: transparent;
+  --lk-link: var(--accent-press);
+  --lk-link-hover: var(--text-strong);
+
+  --lk-scrim: color-mix(in srgb, var(--osl-ink) 82%, transparent);
+  --lk-warning-tint: color-mix(in srgb, var(--osl-warning) 14%, transparent);
+  --lk-success-tint: color-mix(in srgb, var(--osl-success) 12%, transparent);
+  --lk-zone-tint: color-mix(in srgb, var(--accent) 22%, transparent);
+  --lk-zone-tint-2: color-mix(in srgb, var(--osl-info) 22%, transparent);
+}
+
+[data-theme='dark'] {
+  --lk-switch-on: var(--osl-success);
+  --lk-seg-on: var(--surface-inverse);
+  --lk-seg-shadow: none;
+  --lk-seg-border: var(--border);
+  --lk-card-shadow: none;
+  --lk-raised-shadow: none;
+  --lk-tabbar: var(--surface-sunken);
+  --lk-strip-border: var(--border);
+  --lk-link: var(--text-strong);
+  --lk-link-hover: var(--osl-white);
+  --lk-scrim: color-mix(in srgb, var(--surface-page) 82%, transparent);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--surface-page);
+  color: var(--text-body);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+input {
+  font-family: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: var(--lk-link);
+}
+
+a:hover {
+  color: var(--lk-link-hover);
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Rows inside a list group get a hairline between them. */
+.lk-group > * + * {
+  border-top: 1px solid var(--border) !important;
+}
+
+/* Role cards lift on hover and darken slightly on press. */
+.lk-role {
+  transition: box-shadow var(--dur-fast) var(--ease-out), filter var(--dur-fast) var(--ease-out);
+}
+
+.lk-role:hover {
+  box-shadow: var(--shadow-raised) !important;
+}
+
+.lk-role:active {
+  filter: brightness(0.97);
+}
+
+/* Feed swap in multi-cam: crossfade the main tile. */
+.lk-fade {
+  animation: lk-fade var(--dur-base) var(--ease-out);
+}
+
+@keyframes lk-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.lk-spin {
+  transform-origin: center;
+  animation: lk-spin 1s linear infinite;
+}
+
+@keyframes lk-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Launch screen: rings never move; moons rise, blink twice, glance, settle. */
+.lk-moon {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: lk-moon 6s 1 both;
+}
+
+.lk-eye2 .lk-moon {
+  animation-delay: 0.06s;
+}
+
+@keyframes lk-moon {
+  0%, 20% { opacity: 0; transform: translateX(0) scale(0); }
+  30%, 44% { opacity: 1; transform: translateX(0) scale(1); }
+  46% { opacity: 0; transform: translateX(0) scale(1); }
+  48% { opacity: 1; transform: translateX(0) scale(1); }
+  50% { opacity: 0; transform: translateX(0) scale(1); }
+  52%, 60% { opacity: 1; transform: translateX(0) scale(1); }
+  66% { opacity: 1; transform: translateX(-3px) scale(1); }
+  74% { opacity: 1; transform: translateX(3px) scale(1); }
+  80%, 100% { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+.lk-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lk-moon,
+  .lk-fade,
+  .lk-spin {
+    animation: none;
+  }
+}

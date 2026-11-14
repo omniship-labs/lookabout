@@ -1,0 +1,30 @@
+{
+  "name": "Lookabout camera",
+  "env": "esp32-s3-uvc",
+  "chip": "ESP32-S3",
+  "version": "0.1.0",
+  "flash": {
+    "mode": "dio",
+    "freq": "80m",
+    "size": "4MB"
+  },
+  "parts": [
+    {
+      "address": 0,
+      "file": "bootloader.bin"
+    },
+    {
+      "address": 32768,
+      "file": "partitions.bin"
+    },
+    {
+      "address": 61440,
+      "file": "ota_data_initial.bin"
+    },
+    {
+      "address": 131072,
+      "file": "firmware.bin"
+    }
+  ],
+  "app": "firmware.bin"
+}

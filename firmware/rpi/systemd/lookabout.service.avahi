@@ -1,0 +1,11 @@
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<!-- Lets the Lookabout apps find this camera on the network. -->
+<service-group>
+  <name replace-wildcards="yes">Lookabout camera on %h</name>
+  <service>
+    <type>_lookabout._tcp</type>
+    <port>8080</port>
+    <txt-record>path=/stream</txt-record>
+  </service>
+</service-group>

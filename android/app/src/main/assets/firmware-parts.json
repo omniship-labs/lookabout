@@ -1,0 +1,1 @@
+{"version":"0.1.0","flashSizeBytes":4194304,"parts":[{"address":0,"file":"firmware-esp32-s3-uvc-bootloader.bin"},{"address":32768,"file":"firmware-esp32-s3-uvc-partitions.bin"},{"address":61440,"file":"firmware-esp32-s3-uvc-ota_data_initial.bin"},{"address":131072,"file":"firmware-esp32-s3-uvc.bin"}]}

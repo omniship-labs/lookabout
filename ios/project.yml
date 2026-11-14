@@ -1,0 +1,47 @@
+# XcodeGen spec — generate the .xcodeproj with:  cd ios && xcodegen generate
+name: Lookabout
+options:
+  bundleIdPrefix: dev.omniship
+  deploymentTarget:
+    iOS: "17.0"
+
+targets:
+  Lookabout:
+    type: application
+    platform: iOS
+    sources:
+      - path: Lookabout
+    info:
+      path: Lookabout/Info.plist
+      properties:
+        CFBundleDisplayName: Lookabout
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSCameraUsageDescription: "Lookabout uses the camera when you set this device up as a camera, and to scan a pairing code. Video goes only to your paired viewers."
+        NSMicrophoneUsageDescription: "Lookabout listens for crying and sends sound to your paired viewers when this device is a camera, and sends your voice when you hold to talk."
+        NSLocalNetworkUsageDescription: "Lookabout finds and connects to your cameras on your home network."
+        NSBonjourServices:
+          - _lookabout._tcp
+        # ESP32 and Raspberry Pi cameras serve plain http on the home network.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        # Standard published algorithms only (planned WebRTC DTLS-SRTP). Must be
+        # filed through Apple's export compliance flow at submission, not assumed.
+        ITSAppUsesNonExemptEncryption: false
+        # A camera device keeps listening and streaming with the screen dimmed.
+        # App Review Guideline 2.5.4: justify this in review notes at submission.
+        UIBackgroundModes:
+          - audio
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.omniship.lookabout
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        GENERATE_INFOPLIST_FILE: NO
