@@ -149,7 +149,7 @@ function ControlButton({ on, onClick, disabled, height = 52, stacked = false, ou
 }
 
 /** Snapshot: saves the camera's current frame, and says how it went on the button. */
-function SnapshotButton({ cam, height, stacked }) {
+function SnapshotButton({ cam, height, stacked, outline }) {
   const [status, setStatus] = React.useState('idle'); // idle | busy | saved | failed | none
   const timer = React.useRef(null);
   React.useEffect(() => () => clearTimeout(timer.current), []);
@@ -179,7 +179,7 @@ function SnapshotButton({ cam, height, stacked }) {
 
   const label = { idle: 'Snapshot', busy: 'Saving…', saved: 'Saved', failed: 'Couldn’t save', none: 'No video yet' }[status];
   return (
-    <ControlButton onClick={take} disabled={status === 'busy'} height={height} stacked={stacked} icon={<SnapshotIcon size={20} />}>
+    <ControlButton onClick={take} disabled={status === 'busy'} height={height} stacked={stacked} outline={outline} icon={<SnapshotIcon size={20} />}>
       {label}
     </ControlButton>
   );
@@ -479,6 +479,9 @@ function StatusCard({ room, controls, since, nameWidth, pad = '14px 16px', title
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8, marginTop: 4 }}>
           <TalkButton controls={controls} height={controls.height} icon={false} />
           <ControlButton on={!!controls.lullaby} onClick={controls.toggleLullaby} height={controls.height} outline>Lullaby</ControlButton>
+          <div style={{ gridColumn: '1 / -1', display: 'grid' }}>
+            <SnapshotButton key={room.main.id} cam={room.main} height={controls.height} outline />
+          </div>
         </div>
       ) : null}
     </div>

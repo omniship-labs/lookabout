@@ -21,6 +21,10 @@ npm run dev
 npm run build
 ```
 
+Every pull request is built by `.github/workflows/build.yml`. A push to `main`
+publishes `dist` to GitHub Pages through `.github/workflows/deploy.yml` (Pages
+has to be switched on in the repo settings first).
+
 ```
 src/
 ├─ App.jsx               routes (hash router) + launch screen

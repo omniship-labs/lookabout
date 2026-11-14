@@ -1,7 +1,8 @@
 // Firmware for ESP32 cameras: first flash over USB (Web Serial + esptool-js,
 // Chrome or Edge on a computer) and updates over Wi-Fi (POST /api/update).
 
-const MANIFEST_URL = '/firmware/esp32-s3-uvc/manifest.json';
+// Under the page's base path, so it resolves on a GitHub Pages sub-path too.
+const MANIFEST_URL = `${import.meta.env.BASE_URL}firmware/esp32-s3-uvc/manifest.json`;
 
 let manifestPromise = null;
 
