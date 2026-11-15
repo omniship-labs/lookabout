@@ -212,9 +212,16 @@ real RTSP camera or a USB webcam yet.
 
 Goal: "I don't want everyone to see everything." Decisions so far:
 
-- Household with roles: members are **admin** or **viewer**; each camera has
-  an access list; admins see all. Invite by email, active on first matching
-  sign-in.
+- Household with roles: members are **admin** or **member**; admins see all.
+  Admins put cameras in **groups** and give members **view** or **manage** per
+  group (decided 15 Nov 2026, replacing per-camera access lists). Manage =
+  delete events and clips, edit zones, rename, share the group (view only).
+  Invite by email, active on first matching sign-in, or by an invite link.
+- The other contract questions were answered 15 Nov 2026 (sessions 30 days, 7
+  while remote; a passkey per address; 14+ character password or a passkey
+  before remote access; no email from the hub; no CORS, so Pages never calls a
+  hub; old pairing keys ended at upgrade). See the Decisions list at the end
+  of `docs/hub-auth.md`.
 - Sign-in methods: **local accounts** (passkey or password) as the default so a
   LAN-only hub works, plus **Google and Apple** as optional providers where each
   owner brings their own keys through a guided wizard. No shared OmniShip login
@@ -242,8 +249,9 @@ Tasks, in build order:
       hub's today). It also covers the enforcement table for every existing
       hub route, cookies vs app tokens, media tickets replacing `?token=`,
       CSRF/origin rules, first-admin setup and moving off pairing keys.
-      **Left:** the owner answers its eight questions (Q1–Q8 at the end) and
-      signs it off.
+      The owner answered its eight questions on 15 Nov 2026 (Decisions, at the
+      end), and Q6 became camera groups with managers. **Left:** the owner
+      reads the updated doc and signs it off.
 - [ ] **G2. Wizard component** (web): a shared step UI. Each step has a guide
       (numbered substeps, copy buttons, deep links), the thing to do, an
       automated check or manual confirm, a state (`todo`, `checking`,
@@ -262,20 +270,23 @@ Tasks, in build order:
       light and dark at phone and desktop widths, including a failed check
       (wrong address) and Change on a passed step.
 - [ ] **G3. Hub-mode sign-in and gating** (web): sign-in screen showing only
-      the providers the owner enabled; route guard (viewer routes need a
-      session; Zones, Devices, Add camera and Household need admin); one
+      the providers the owner enabled; route guard (viewing needs a session;
+      Devices, Add camera and Household need admin; Zones, Rename and Delete
+      event need `manage` on that camera); one
       `useVisibleCameras()` hook replacing direct reads of `s.cameras` in
       `Cameras.jsx`, `Live.jsx` (`houseCam`, the `/live` nursery room, tablet
       list) and `viewer.jsx` (online count); events and clips filtered by
       visible cameras; a "No access" state for a direct `/live/<id>` link to a
       camera the user can't see. Until the hub exists, a clearly labelled
       **preview** provider signs in as sample members. It is **not** security.
-      Done: signing in as a viewer shows only their cameras, in light and
-      dark, at phone and desktop widths.
+      Done: signing in as a member shows only their groups' cameras, and
+      manage actions only where they have `manage`, in light and dark, at
+      phone and desktop widths.
 - [ ] **G4. Account and Household screens** (web): Settings gets an Account
       section (signed in as, role, Household, Sign out). Household lists
-      members with role pills; admins open a member to change role, tick
-      cameras, or remove; an Invite field adds a pending member. Replace the
+      members with role pills, and the camera groups; admins make groups, open
+      a member to change role, set view or manage per group, or remove; an
+      Invite field adds a pending member. Managers get Share on their groups. Replace the
       "Second phone" viewers sample in `Devices` once the hub is real.
 - [ ] **G5. Pages landing flow** (web): when not served by a hub, `Start`
       becomes two cards, "Flash a camera" (existing `#/flash`) and "Set up
@@ -354,8 +365,8 @@ In order:
 3. Switch GitHub Pages on, then re-run the Deploy workflow (finishes E3).
 4. Flash a real ESP32-S3 (A1–A7), then Snapshot on a real board (E8).
 5. Add `NODE_AUTH_TOKEN` to the Claude cloud environment (E7).
-6. Accounts and camera gating (section G). G1 is drafted (`docs/hub-auth.md`,
-   waiting on the owner's answers) and G2 is built. Next: look at the new
+6. Accounts and camera gating (section G). G1's questions are answered
+   (`docs/hub-auth.md`, waiting on sign-off) and G2 is built. Next: look at the new
    pairing wizard in a browser, then G3 (sign-in and gating with the preview
    provider) and G4. The hub's present pairing keys (B3) are what G replaces
    with accounts.

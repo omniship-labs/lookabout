@@ -1,17 +1,17 @@
 # Hub accounts and access: API contract
 
-Status: **draft for the owner's review** (HANDOVER G1). Nothing here is built
-yet. The hub today has pairing keys only (B3, `hub/lookabout_hub/pairing.py`);
+Status: **owner's answers in (15 Nov 2026), ready for sign-off** (HANDOVER G1).
+Nothing here is built yet. The hub today has pairing keys only (B3, `hub/lookabout_hub/pairing.py`);
 this document is what replaces them. It is written to be language-neutral:
 the hub is Python (B9), but nothing below depends on that.
 
-Open questions for the owner are collected at the end and marked **(Q1)**,
-**(Q2)**… where they come up.
+The owner's decisions on the open questions are listed at the end
+([Decisions](#decisions-15-nov-2026)) and marked **(Q1)**, **(Q2)**… where they apply.
 
 ## What this covers
 
 - Who can sign in to a hub, and how (local accounts, Google, Apple).
-- Households: members, the two roles, per-camera access, invites.
+- Households: members, the two roles, camera groups with view or manage access, invites.
 - How every existing hub route is authorised once accounts exist.
 - The endpoints the setup wizards (G2, G6–G10) call to save progress and run checks.
 - Moving from today's pairing keys to accounts.
@@ -39,8 +39,11 @@ details beyond what authorisation needs (G7).
 |---|---|
 | Household | Everyone who uses one hub. One hub has exactly one household. |
 | Member | A person in the household: `id`, `name`, `email`, `role`, `cameras`, `status`. |
-| Role | `admin` or `viewer`. Admins see every camera and can change anything. Viewers see the cameras on their access list and can't change hub setup. |
-| Access list | `cameras` on a member: `"all"` or a list of camera ids. Always `"all"` for admins. New cameras are **not** added to viewers' lists automatically. |
+| Role | `admin` or `member`. Admins see every camera and can change anything. Members see only the cameras their grants give them. (The handover's "viewer" role is `member` here, since a member can also manage cameras.) |
+| Camera group | A named set of cameras, made by admins: "Nursery", "Outside". A camera can be in several groups. A camera in no group is seen by admins only. Adding a camera to a group gives it to everyone with a grant on that group. **(Q6)** |
+| Grant | A member's access to one group: `view` or `manage`. A member with several grants covering one camera gets the highest level. |
+| `view` | Live video, snapshots, events and clips of the group's cameras, and seeing their zones. |
+| `manage` | Everything in `view`, plus for the group's cameras: delete events and clips, edit motion zones and sensitivity, rename the camera, and **share the group** (give other members `view` on it, never `manage`). A manager can take back only the shares they made, never a grant an admin made. Adding or removing cameras, and the groups themselves, stay admin-only. |
 | Identity | A way a member signs in: a password, a passkey, a Google account (`sub`), an Apple account (`sub`). A member can have several. |
 | Session | Proof that a member signed in on one device. Browser sessions are cookies; app sessions are bearer tokens. Each one is listed under Paired devices and can be ended there. |
 | Media ticket | A short-lived, single-camera token for places that can't send a cookie or header (an `<img>` on another origin, a native player). Replaces today's `?token=`. |
@@ -63,7 +66,9 @@ details beyond what authorisation needs (G7).
 |---|---|---|
 | 400 | `bad_request` | The body is wrong; `error` says what. |
 | 401 | `not_signed_in` | No session, or it has ended or been revoked. |
-| 403 | `admin_only` | A viewer tried something only an admin may do. |
+| 403 | `admin_only` | A member tried something only an admin may do. |
+| 403 | `manage_only` | A member with `view` on a camera tried a `manage` action on it. |
+| 403 | `not_yours` | A manager tried to take back a grant someone else made. |
 | 403 | `bad_origin` | A cookie-authenticated change came from another site (see [CSRF](#csrf-and-origins)). |
 | 404 | `not_found` | No such thing, **or the caller may not see it** (see below). |
 | 409 | `conflict` | E.g. removing or demoting the last admin, inviting an email that's already a member. |
@@ -88,13 +93,15 @@ Set-Cookie: lk_session=<random 32 bytes, base64url>; Path=/; HttpOnly; SameSite=
 
 - The hub stores only a hash of the value, as it does for pairing keys now.
 - Lifetime 30 days, sliding: a request in the last 7 days of a session extends
-  it. **(Q1)** Shorter while remote access is on?
+  it. **(Q1)** While remote access is on, sessions last **7 days** (sliding the
+  same way, the last 2 days extend it); switching remote access on shortens
+  sessions that already exist.
 - Signing out, an admin removing the member, or ending the session under
   Paired devices deletes it on the hub; the next request gets 401.
-- Changing a member's role or access list takes effect on their next request
+- Changing a member's role or grants takes effect on their next request
   (the hub reads the member on every request; nothing is cached in the cookie).
 
-### Native apps (iOS, Android) and the pre-accounts web viewer
+### Native apps (iOS, Android)
 
 Apps can't share the browser's cookie, so they get a bearer token:
 
@@ -151,8 +158,10 @@ What the sign-in screen should show. Only enabled providers are listed.
 Passkey sign-in first calls `POST /api/auth/passkey/options` (open) for a
 challenge. The WebAuthn relying party id is the hub's host name, so **a passkey
 made on `lookabout.local` won't work on the public tunnel address and vice
-versa.** **(Q2)** Accept that (register one per address), or require the
-public name once remote access is on?
+versa.** **(Q2)** The hub accepts that: a person adds one passkey per address
+they use (Account shows which addresses each passkey works on, and offers
+"Add a passkey for this address" when signed in on one that has none). Sign-in
+at home never depends on the internet.
 
 Google and Apple come back to:
 
@@ -211,8 +220,9 @@ needs shell access to the Pi).
 
 Password rules: at least 10 characters, checked against a short built-in list
 of common passwords. Stored with scrypt or Argon2id. "Strong credential" for
-G7 means, in this draft: a passkey, or a password of at least 14 characters.
-**(Q3)** Is that enough to allow remote access, or do we require a passkey?
+G7 means: a passkey, or a password of at least 14 characters. **(Q3)** Every
+admin must have one before remote access can be switched on; an admin with
+only a shorter password is asked to change it first.
 
 ## Me
 
@@ -224,13 +234,23 @@ G7 means, in this draft: a passkey, or a password of at least 14 characters.
   "household": { "id": "a1b2c3d4e5f60718", "name": "Home" },
   "session": { "id": "s-91c0", "kind": "browser", "device": "Mac browser", "expires": 1766000000 },
   "cameras": "all",
+  "groups": "all",
   "sign_in": { "password": true, "passkeys": 1, "google": "sam@gmail.com", "apple": null }
 }
 ```
 
-`cameras` is `"all"` or the list of ids this member can see. The web app's
-`useVisibleCameras()` (G3) uses it only to decide what to *show*; the hub
-filters everything anyway.
+For an admin, `cameras` and `groups` are `"all"`. For a member they say what
+their grants work out to:
+
+```json
+"cameras": { "cam-1a2b": "manage", "cam-9f00": "view" },
+"groups": [ { "id": "g-nursery", "name": "Nursery", "level": "manage" },
+            { "id": "g-outside", "name": "Outside", "level": "view" } ]
+```
+
+The web app's `useVisibleCameras()` (G3) uses `cameras` only to decide what to
+*show* and which buttons to offer (Delete, Zones, Rename, Share on `manage`);
+the hub checks everything itself anyway.
 
 ### Also under `/api/me`
 
@@ -247,27 +267,35 @@ filters everything anyway.
 
 ### `GET /api/household` (any member)
 
-Viewers get the member list without emails or access lists (just names and
-roles). Admins get everything:
+Members get the member list without emails or grants (just names and roles),
+which managers need to pick someone to share with. Admins get everything:
 
 ```json
 {
   "household": { "id": "a1b2c3d4e5f60718", "name": "Home" },
   "members": [
     { "id": "m-3f2a", "name": "Sam", "email": "sam@example.com", "role": "admin",
-      "status": "active", "cameras": "all", "last_seen": 1763390000 },
-    { "id": "m-77de", "name": "Grandma", "email": "gran@example.com", "role": "viewer",
-      "status": "active", "cameras": ["cam-1a2b", "cam-9f00"], "last_seen": 1763300000 },
-    { "id": "m-a011", "name": "", "email": "alex@example.com", "role": "viewer",
-      "status": "invited", "cameras": ["cam-1a2b"], "invited": 1763380000 }
+      "status": "active", "grants": [], "last_seen": 1763390000 },
+    { "id": "m-77de", "name": "Grandma", "email": "gran@example.com", "role": "member",
+      "status": "active", "last_seen": 1763300000,
+      "grants": [ { "group": "g-nursery", "level": "manage", "by": "m-3f2a" } ] },
+    { "id": "m-a011", "name": "", "email": "alex@example.com", "role": "member",
+      "status": "invited", "invited": 1763380000,
+      "grants": [ { "group": "g-nursery", "level": "view", "by": "m-77de" } ] }
+  ],
+  "groups": [
+    { "id": "g-nursery", "name": "Nursery", "cameras": ["cam-1a2b"] },
+    { "id": "g-outside", "name": "Outside", "cameras": ["cam-9f00", "cam-c3d4"] }
   ]
 }
 ```
 
+`by` is who made the grant: an admin, or the manager who shared the group.
+
 ### `POST /api/household/invites` (admin)
 
 ```json
-{ "email": "alex@example.com", "role": "viewer", "cameras": ["cam-1a2b"] }
+{ "email": "alex@example.com", "role": "member", "grants": [ { "group": "g-nursery", "level": "view" } ] }
 ```
 
 → 201 with the new pending member, plus:
@@ -282,18 +310,38 @@ roles). Admins get everything:
   sends no mail), so the admin passes on the **invite link**. Opening it lets
   the person choose a password or passkey for that pending member. Link: one
   use, 7 days.
-- The hub never sends email itself. **(Q4)** Fine to keep it that way?
+- The hub never sends email itself **(Q4)**: the admin passes the link on by
+  message or chat. The Invite screen offers Copy and the browser's Share.
 
 `DELETE /api/household/invites/{member_id}` cancels a pending invite.
 
 ### `PATCH /api/household/members/{id}` (admin)
 
-Any of `{ "role": "admin" | "viewer", "cameras": "all" | [ids], "name" }`.
-Unknown camera ids → 400. Demoting the last admin → 409.
+Any of `{ "role": "admin" | "member", "grants": [ { "group", "level" } ], "name" }`.
+`grants` replaces the member's whole list, including shares managers made.
+Unknown group ids → 400. Demoting the last admin → 409.
 
 ### `DELETE /api/household/members/{id}` (admin)
 
 Ends all their sessions and removes their identities. Removing the last admin → 409.
+
+### Groups (admin)
+
+| Route | What |
+|---|---|
+| `POST /api/household/groups` | `{ name, cameras: [ids] }` → 201 with the group |
+| `PATCH /api/household/groups/{id}` | any of `{ name, cameras }`; `cameras` replaces the list |
+| `DELETE /api/household/groups/{id}` | removes the group and every grant on it; its cameras stay |
+
+The Add camera flow asks which groups a new camera joins (none ticked by default,
+so a new camera is admin-only until an admin shares it).
+
+### Sharing (managers and admins)
+
+| Route | What |
+|---|---|
+| `POST /api/groups/{id}/shares` | `{ member }` gives that member `view` on the group. Needs `manage` on it. Inviting someone new is still admin-only. 409 if they already have a grant on it. |
+| `DELETE /api/groups/{id}/shares/{member}` | Takes back a `view` grant. A manager can take back only the ones they made (`by` is them); others → 403 `not_yours`. |
 
 ### `GET /api/household/sessions` (admin)
 
@@ -319,8 +367,9 @@ Every session of every member, for the Paired devices screen; `DELETE
 Secrets (`client_secret`, the Apple `.p8` key) are **write-only**: they go in on
 `PUT` and come back only as `has_secret` / `has_key`. They're encrypted on the
 data volume with a key kept in a separate file (`hub-data/keys/`), so a copy of
-the SQLite file alone doesn't hold them. **(Q5)** Good enough on a Pi, given the
-key file sits on the same SD card? (It mainly protects backups of the database.)
+the SQLite file alone doesn't hold them. **(Q5)** The key file stays on the
+volume: nothing for the owner to set up. It mainly protects copies of the
+database; anyone with the whole SD card has both.
 
 ### `PUT /api/admin/auth/providers`
 
@@ -334,8 +383,10 @@ The same shape; send only what changes. Rules:
 
 ### Visibility
 
-A member can see camera `C` if they're an admin or `C` is on their access
-list. "See" includes live video, snapshots, events and clips of `C`, and `C`'s zones.
+A member can see camera `C` if they're an admin or one of their grants is on a
+group that holds `C`; they can manage `C` if one such grant is `manage`. What
+each level allows is under [Terms](#terms). "Sees `{id}`" and "manages `{id}`"
+below mean exactly that.
 
 ### Enforcement
 
@@ -350,16 +401,17 @@ check verifies**, route by route.
 | `POST /api/pairing/code`, `POST /api/pair` | see [Moving from pairing keys](#moving-from-pairing-keys) | |
 | `GET /api/cameras` | member | **Filtered** to visible cameras. |
 | `POST /api/cameras`, `POST /api/cameras/test` | admin | |
-| `PATCH`, `DELETE /api/cameras/{id}` | admin | |
+| `PATCH /api/cameras/{id}` (rename) | manages `{id}` | |
+| `DELETE /api/cameras/{id}` | admin | |
 | `GET /api/cameras/{id}/snapshot.jpg` | sees `{id}` | session or ticket |
 | `GET /api/cameras/{id}/stream.mjpeg` | sees `{id}` | session or ticket |
 | `POST /api/cameras/{id}/webrtc` | sees `{id}` | The SDP answer is the only way into go2rtc's media port; go2rtc's own API (1984) and RTSP (8554) stay bound to localhost and **must never be exposed or tunnelled**. |
 | `POST /api/cameras/{id}/ticket` | sees `{id}` | new |
 | `GET /api/cameras/{id}/zones` | sees `{id}` | |
-| `PUT /api/cameras/{id}/zones` | admin | |
+| `PUT /api/cameras/{id}/zones` | manages `{id}` | |
 | `GET /api/usb` | admin | |
 | `GET /api/events` | member | **Filtered** to visible cameras. An event of a deleted camera is admin-only. |
-| `DELETE /api/events/{id}` | admin | **(Q6)** Today any viewer can delete. Should viewers delete events on cameras they can see? |
+| `DELETE /api/events/{id}` | manages the event's camera | Today any paired viewer can. Deletes the clip too. **(Q6)** |
 | `GET /api/clips/{name}` | sees the event's camera | The hub maps the file name to its event; a name with no event → 404. Session or ticket. |
 | `GET /api/settings` | member | |
 | `PATCH /api/settings` | admin | |
@@ -367,8 +419,9 @@ check verifies**, route by route.
 | Remote video (G7: MSE/HLS over https) | sees `{id}` | Same check, same ticket. |
 | Everything new in this doc | as stated per route | |
 
-The hub's tests get one case per row: no session → 401; viewer without the
-camera → 404; viewer with it → 200; admin → 200.
+The hub's tests get one case per row: no session → 401; member without the
+camera → 404; member with `view` → 200 for reading, 403 `manage_only` for a
+manage route; member with `manage` → 200; admin → 200.
 
 ### CSRF and origins
 
@@ -378,12 +431,14 @@ camera → 404; viewer with it → 200; admin → 200.
   `public_url`). For `POST`, `PUT`, `PATCH`, `DELETE` with the cookie, the
   `Origin` header must be one of those, or 403 `bad_origin`.
 - Bearer-token requests (apps) don't use cookies, so they aren't exposed to
-  CSRF; they keep working from any origin on the LAN.
+  CSRF. Native apps aren't browsers and need no CORS.
 - `SameSite=Lax` plus the origin check is the CSRF defence; no separate token.
-- `Access-Control-Allow-Private-Network` stays only for bearer requests from
-  the LAN. **(Q7)** Do we still want the Pages site to reach a hub directly at
-  all, now that viewing happens on the hub's own address (G5)? Dropping it
-  removes a whole class of cross-origin cases.
+- **No cross-origin access at all (Q7).** The hub stops sending
+  `Access-Control-Allow-*` headers, including `Access-Control-Allow-Private-Network`,
+  so no other website (the Pages site included) can read from it. Pages only
+  explains, flashes boards, generates the install files and links to "Open my
+  hub" (G5). For development, `npm run dev` proxies `/api` to a hub (a Vite
+  `server.proxy` setting), so the dev page is same-origin too.
 
 ## Setup wizards
 
@@ -475,14 +530,14 @@ When accounts ship:
    hub enters `setup_required` and shows a setup code as for a fresh hub. Old
    keys keep working **read-only** (camera list, video, events) until the first
    admin is made, so nobody loses their monitor during the upgrade.
-2. When the first admin is created, each old viewer key becomes a session that
-   belongs to the new admin, listed under Paired devices with its old name, so
-   the admin can end the ones that aren't theirs. **(Q8)** Alternatively, end
-   every old key and make everyone sign in again. Simpler and safer; costs one
-   re-sign-in per device.
+2. When the first admin is created, **every old viewer key is ended (Q8)**.
+   Each device then signs in once, as a member the admin has invited. The
+   hub's first-run page says so before the admin confirms, with the list of
+   devices that will be signed out.
 3. Pairing codes stay as the **app sign-in shortcut**: a signed-in admin makes
    a code (or the QR from B3) *for a member* in the dashboard, and
    `POST /api/pair` with that code returns a bearer session for that member.
+   Managers can't make these (inviting people stays with admins).
    The hub page's open "Show a pairing code" button goes away.
 4. `?token=` on stream and clip URLs is replaced by tickets.
 
@@ -494,19 +549,24 @@ be built and checked. It's labelled as a preview on the sign-in screen, lives
 only in the web app, makes no requests, and is **not security**: it hides
 nothing from anyone who opens the developer tools. The hub never offers it.
 
-## Questions for the owner
+## Decisions (15 Nov 2026)
 
-- **Q1.** Session length: 30 days sliding everywhere, or shorter (e.g. 7 days)
-  while remote access is on?
-- **Q2.** Passkeys are tied to a host name. One passkey per address
-  (`lookabout.local` and the public one), or only the public name once remote
-  access is on?
-- **Q3.** For switching remote access on: is a long password enough for the
-  admin, or require a passkey?
-- **Q4.** The hub never sends email; local-only invites go by a link the admin
-  passes on. OK?
-- **Q5.** Provider secrets encrypted with a key file on the same volume.
-  Enough, or should the key come from somewhere else (an env var in compose)?
-- **Q6.** Can viewers delete events and clips of cameras they can see, or only admins?
-- **Q7.** Drop direct Pages-to-hub requests (and private-network CORS) entirely?
-- **Q8.** On upgrade, keep old viewer keys (attached to the first admin) or end them all?
+The owner's answers to the draft's questions:
+
+- **Q1. Session length:** 30 days, sliding; **7 days while remote access is on.**
+- **Q2. Passkeys:** one passkey per address (home name and public name). Sign-in
+  at home never needs the internet.
+- **Q3. Before remote access:** every admin has a passkey or a password of 14+
+  characters.
+- **Q4. Email:** the hub never sends any. Local-only invites go by a link the
+  admin passes on.
+- **Q5. Provider secrets:** encrypted with a key file on the hub's volume.
+- **Q6. Who can delete events and clips:** asked as "admins only or viewers";
+  the owner chose a third way: **camera groups with managers.** Admins group
+  cameras and grant members `view` or `manage` per group. `manage` allows
+  deleting events and clips, editing zones, renaming the camera and sharing
+  the group (`view` only) with other members. This replaces per-camera access
+  lists.
+- **Q7. Pages to hub:** dropped. The hub sends no CORS headers.
+- **Q8. Old pairing keys:** all ended when the first admin is created;
+  every device signs in again once.
