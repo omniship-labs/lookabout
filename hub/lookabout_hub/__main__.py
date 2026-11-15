@@ -17,11 +17,14 @@ import sys
 
 from . import VERSION
 from .bridge import Go2rtc
+from .clips import Clips
+from .cry import load_classifier
 from .discovery import advertise
 from .monitor import Monitor
 from .pairing import Pairing
 from .server import Hub, make_server
 from .store import Store
+from .watcher import Watchers
 
 
 def main():
@@ -33,6 +36,8 @@ def main():
     parser.add_argument("--name", default=env("LOOKABOUT_HUB_NAME") or "lookabout-hub",
                         help="name shown in Lookabout")
     parser.add_argument("--go2rtc", default=env("LOOKABOUT_GO2RTC"), help="path to the go2rtc program")
+    parser.add_argument("--model", default=env("LOOKABOUT_CRY_MODEL", "/app/models/yamnet.tflite"),
+                        help="YAMNet model file for cry detection")
     parser.add_argument("--no-mdns", action="store_true", help="don't announce the hub on the network")
     args = parser.parse_args()
 
@@ -40,7 +45,12 @@ def main():
     store = Store(os.path.join(args.data, "hub.db"))
     bridge = Go2rtc(args.data, binary=args.go2rtc)
     monitor = Monitor(store)
-    hub = Hub(store, Pairing(), bridge, monitor, args.name, args.port, args.data)
+    clips = Clips(args.data, store)
+    hub = Hub(store, Pairing(), bridge, monitor, args.name, args.port, args.data, clips=clips)
+    hub.classifier, hub.classifier_problem = load_classifier(args.model)
+    if not hub.classifier:
+        print(f"Cry detection is off: {hub.classifier_problem}.", file=sys.stderr)
+    store.close_stale_events()
 
     try:
         server = make_server(hub)
@@ -48,6 +58,10 @@ def main():
         sys.exit(f"Port {args.port} is not free: {err}")
     bridge.start(store.cameras())
     monitor.start()
+    clips.start()
+    if bridge.available:  # recording and detection read the cameras through go2rtc
+        hub.watchers = Watchers(hub)
+        hub.watchers.sync()
     withdraw = (lambda: None) if args.no_mdns else advertise(args.name, store.hub_id(), args.port, VERSION)
 
     def stop(*_):
@@ -62,6 +76,8 @@ def main():
         pass
     finally:
         withdraw()
+        if hub.watchers:
+            hub.watchers.stop()
         bridge.stop()
 
 

@@ -141,6 +141,7 @@ class HubTest(unittest.TestCase):
     def tearDown(self):
         self.server.shutdown()
         self.server.server_close()
+        self.store.close()
         self.dir.cleanup()
 
     def call(self, method, path, body=None, token=None, headers=None, raw=False):
@@ -203,6 +204,7 @@ class HubTest(unittest.TestCase):
         reopened = Store(os.path.join(self.dir.name, "hub.db"))
         self.assertIsNotNone(reopened.viewer_for_token(token))
         self.assertEqual(reopened.hub_id(), self.store.hub_id())
+        reopened.close()
 
     def test_cameras(self):
         token = self.pair()["token"]

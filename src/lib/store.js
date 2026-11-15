@@ -72,7 +72,27 @@ let state = derive({
   hubViewers: [],
   hubEvents: [],
   hubReachable: true,
+  hubRecording: true, // the hub's "record continuously" setting
 });
+
+// Settings that live on the hub once one is paired: this device's name for each -> the hub's.
+const hubSettingNames = { keepDays: 'keep_days', motionAlerts: 'motion', cryDetection: 'cry', sensitivity: 'cry_sensitivity', hubRecording: 'recording' };
+const fromHubSettings = (h) => Object.fromEntries(Object.entries(hubSettingNames).map(([mine, theirs]) => [mine, h[theirs]]));
+let settingsSentAt = 0; // a refresh that started before a change was sent mustn't undo it
+
+/** Change a setting. With a hub paired, the ones the hub acts on are saved there too. */
+export function saveSetting(patch) {
+  setState(patch);
+  const hub = state.hub;
+  const forHub = Object.fromEntries(Object.entries(patch).filter(([k]) => hubSettingNames[k]).map(([k, v]) => [hubSettingNames[k], v]));
+  if (!hub || !Object.keys(forHub).length) return;
+  settingsSentAt = Date.now();
+  hubSend(hub, 'PATCH', '/api/settings', forHub).catch((err) => {
+    announce(err.message);
+    settingsSentAt = 0;
+    refreshHub();
+  });
+}
 
 const listeners = new Set();
 
@@ -124,7 +144,8 @@ export function addCameras(list) {
 /** Line under "Cameras" and in the sidebar. */
 export function hubLine(s) {
   if (!s.hubPaired) return 'No hub · live only';
-  return s.hubReachable ? 'Home hub connected' : 'Home hub not reachable';
+  if (!s.hubReachable) return 'Home hub not reachable';
+  return s.hubRecording ? `Home hub recording · ${s.keepDays} days kept` : 'Home hub connected · not recording';
 }
 
 export function setHub(hub) {
@@ -151,14 +172,17 @@ export function refreshHub() {
   if (!hub) return Promise.resolve();
   if (refreshing) return refreshing;
   const weekAgo = Math.floor(Date.now() / 1000) - 7 * 86400;
+  const asked = Date.now();
   refreshing = Promise.all([
     hubGet(hub, '/api/cameras'),
     hubGet(hub, `/api/events?since=${weekAgo}`),
     hubGet(hub, '/api/viewers'),
+    hubGet(hub, '/api/settings'),
   ])
-    .then(([cams, events, viewers]) => {
+    .then(([cams, events, viewers, settings]) => {
       if (state.hub !== hub) return;
       setState({
+        ...(asked > settingsSentAt + 500 ? fromHubSettings(settings) : null),
         hubCameras: cams.cameras.map(viewerCamera),
         hubEvents: events.events.map(viewerEvent),
         hubViewers: viewers.viewers,
@@ -194,6 +218,12 @@ export function useHubSync(intervalMs = 5000) {
 export async function addHubCamera(camera) {
   await hubSend(state.hub, 'POST', '/api/cameras', camera);
   await refreshHub();
+}
+
+/** Delete an event and its clip on the hub. */
+export async function removeHubEvent(hubId) {
+  await hubSend(state.hub, 'DELETE', `/api/events/${hubId}`);
+  setState({ hubEvents: state.hubEvents.filter((e) => e.hubId !== hubId) });
 }
 
 /** Unpair this device: the hub forgets its key, and this device forgets the hub. */

@@ -7,6 +7,13 @@ FROM golang:1.26-bookworm AS go2rtc
 ARG GO2RTC_VERSION=v1.9.15
 RUN CGO_ENABLED=0 GOBIN=/out go install -trimpath -ldflags "-s -w" github.com/AlexxIT/go2rtc@${GO2RTC_VERSION}
 
+# YAMNet (Apache-2.0, Google): the audio classifier behind cry detection. The
+# checksum is checked, so a changed file at that address fails the build.
+FROM python:3.13-slim-bookworm AS model
+ARG YAMNET_SHA256=4d8b4a53282dc83ef04e3e7dbc4fbc98082e34e44ed798e16c3a0cdd4c584faf
+ADD https://storage.googleapis.com/mediapipe-models/audio_classifier/yamnet/float32/1/yamnet.tflite /yamnet.tflite
+RUN echo "${YAMNET_SHA256}  /yamnet.tflite" | sha256sum -c -
+
 FROM python:3.13-slim-bookworm
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \
@@ -16,6 +23,7 @@ COPY --from=go2rtc /out/go2rtc /usr/local/bin/go2rtc
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+COPY --from=model /yamnet.tflite /app/models/yamnet.tflite
 COPY lookabout_hub ./lookabout_hub
 
 # Not root. The video group lets it open USB webcams passed in from the host.

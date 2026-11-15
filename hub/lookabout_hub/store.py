@@ -1,6 +1,7 @@
 """Everything the hub remembers, in one SQLite file on the data volume."""
 
 import hashlib
+import json
 import secrets
 import sqlite3
 import threading
@@ -41,7 +42,21 @@ CREATE TABLE IF NOT EXISTS events (
     clip TEXT                    -- file name under clips/, once one exists
 );
 CREATE INDEX IF NOT EXISTS events_started ON events (started);
+CREATE TABLE IF NOT EXISTS zones (
+    camera_id TEXT PRIMARY KEY,
+    zones TEXT NOT NULL,         -- JSON list of {id, name, action, tone, points}; points are 0..1 of the frame
+    sensitivity INTEGER NOT NULL DEFAULT 60
+);
 """
+
+# Settings viewers can change, with their defaults and what each accepts.
+SETTINGS = {
+    "keep_days": (14, lambda v: isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= 365),
+    "recording": (True, lambda v: isinstance(v, bool)),
+    "motion": (True, lambda v: isinstance(v, bool)),
+    "cry": (True, lambda v: isinstance(v, bool)),
+    "cry_sensitivity": ("Medium", lambda v: v in ("Low", "Medium", "High")),
+}
 
 CAMERA_COLUMNS = ("name", "kind", "address", "username", "password", "device", "source")
 
@@ -57,6 +72,9 @@ class Store:
         self._lock = threading.RLock()
         with self._lock, self._db:
             self._db.executescript(SCHEMA)
+
+    def close(self):
+        self._db.close()
 
     def _all(self, sql, args=()):
         with self._lock:
@@ -89,6 +107,19 @@ class Store:
                 self.set_meta("hub_id", hub_id)
             return hub_id
 
+    def settings(self):
+        saved = json.loads(self.meta("settings", "{}"))
+        return {key: saved.get(key, default) for key, (default, _) in SETTINGS.items()}
+
+    def update_settings(self, patch):
+        """Applies the known, valid keys of `patch`. Returns the settings, or None if a value is wrong."""
+        for key, value in patch.items():
+            if key not in SETTINGS or not SETTINGS[key][1](value):
+                return None
+        with self._lock:
+            self.set_meta("settings", json.dumps({**self.settings(), **patch}))
+            return self.settings()
+
     # --- cameras --------------------------------------------------------
 
     def cameras(self):
@@ -118,7 +149,18 @@ class Store:
         # Whatever was still going on for it (e.g. "offline") ends here.
         self._run("UPDATE events SET ended = ?, detail = 'Camera removed' WHERE camera_id = ? AND ended IS NULL",
                   (time.time(), camera_id))
+        self._run("DELETE FROM zones WHERE camera_id = ?", (camera_id,))
         return self._run("DELETE FROM cameras WHERE id = ?", (camera_id,)).rowcount > 0
+
+    def zones(self, camera_id):
+        """Motion zones of a camera: {"zones": [...], "sensitivity": 0..100}. No zones means the whole frame."""
+        row = self._one("SELECT zones, sensitivity FROM zones WHERE camera_id = ?", (camera_id,))
+        return {"zones": json.loads(row["zones"]), "sensitivity": row["sensitivity"]} if row else {"zones": [], "sensitivity": 60}
+
+    def set_zones(self, camera_id, zones, sensitivity):
+        self._run("INSERT INTO zones (camera_id, zones, sensitivity) VALUES (?, ?, ?) "
+                  "ON CONFLICT(camera_id) DO UPDATE SET zones = excluded.zones, sensitivity = excluded.sensitivity",
+                  (camera_id, json.dumps(zones), sensitivity))
 
     # --- viewers --------------------------------------------------------
 
@@ -164,8 +206,13 @@ class Store:
         )
         return cur.lastrowid
 
-    def end_event(self, event_id, ended=None):
-        self._run("UPDATE events SET ended = ? WHERE id = ? AND ended IS NULL", (ended or time.time(), event_id))
+    def end_event(self, event_id, ended=None, detail=None):
+        self._run("UPDATE events SET ended = ?, detail = COALESCE(?, detail) WHERE id = ? AND ended IS NULL",
+                  (ended or time.time(), detail, event_id))
+
+    def close_stale_events(self):
+        """After a restart nothing is watching the events that were going on; end them where they began."""
+        self._run("UPDATE events SET ended = started WHERE ended IS NULL AND kind IN ('motion', 'crying')")
 
     def open_event(self, kind, camera_id):
         """The event of this kind that is still going on for a camera, if any."""
@@ -173,6 +220,18 @@ class Store:
             "SELECT * FROM events WHERE kind = ? AND camera_id = ? AND ended IS NULL ORDER BY started DESC LIMIT 1",
             (kind, camera_id),
         )
+
+    def event(self, event_id):
+        return self._one("SELECT * FROM events WHERE id = ?", (event_id,))
+
+    def set_event_clip(self, event_id, clip):
+        self._run("UPDATE events SET clip = ? WHERE id = ?", (clip, event_id))
+
+    def remove_event(self, event_id):
+        return self._run("DELETE FROM events WHERE id = ?", (event_id,)).rowcount > 0
+
+    def events_before(self, when):
+        return self._all("SELECT * FROM events WHERE started < ?", (when,))
 
     def events(self, since=0, kind=None, limit=200):
         sql, args = "SELECT * FROM events WHERE started >= ?", [since]

@@ -8,8 +8,16 @@ or NAS) and brings cameras you already own into Lookabout:
 - USB webcams plugged into the hub itself.
 
 It reads each camera with [go2rtc](https://github.com/AlexxIT/go2rtc) (MIT),
-hands paired viewers a WebRTC stream, and records when a camera drops off
-the network. Python, standard library plus two small packages.
+hands paired viewers a WebRTC stream, records continuously, raises events for
+motion inside zones you draw and for crying, and cuts a clip for each event.
+Python with numpy, LiteRT and YAMNet (Apache-2.0) for the cry classifier.
+
+| What | How |
+|---|---|
+| Recording | one-minute H.264 pieces per camera, deleted after "Keep clips for" (default 14 days) and sooner if under 1 GB is free |
+| Motion | 4 frames a second per camera, compared with half a second earlier, only inside the drawn zones (none drawn: whole picture). An event ends 8 s after the last motion and lasts at most 2 min. Zones and sensitivity are saved per camera |
+| Crying | sound from RTSP cameras through YAMNet; 20 s of crying makes an event (short pauses for breath don't reset it). ESP32 and Pi camera nodes and USB webcams send no sound, so no cry detection there |
+| Clips | 8 s before to 4 s after an event, as MP4 with a thumbnail. Starts on a keyframe, so up to one keyframe gap of the lead-in is lost |
 
 ## Install on a Raspberry Pi
 
@@ -45,12 +53,13 @@ Everything the hub stores is in the `hub-data` volume.
 
 ```sh
 pip install -r requirements.txt
-python3 -m lookabout_hub --data ./data            # needs go2rtc and ffmpeg on PATH
-python3 -m unittest discover -s tests             # tests need neither
+python3 -m lookabout_hub --data ./data --model yamnet.tflite   # needs go2rtc and ffmpeg on PATH
+python3 -m unittest discover -s tests             # needs numpy; clip tests also ffmpeg
 ```
 
-Without go2rtc the hub still starts (pairing, camera list and events work)
-but can't show video.
+Without go2rtc the hub still starts (pairing and the camera list work) but
+can't show video, record or detect anything. Without the model file or
+LiteRT it runs without cry detection and says so in its log.
 
 ## Interface
 
@@ -61,11 +70,16 @@ browser can't set headers, such as `<img>`).
 
 ## Status
 
-Tested with a stand-in MJPEG camera (the Pi node fed by a test pattern) and
-the web app in Chrome: pairing, adding the camera, snapshot, MJPEG and
-WebRTC video, offline detection, unpairing. **Not yet run on a Pi, as a
-Docker container, or against a real RTSP camera or USB webcam.** Of the
-image, only the go2rtc build stage has been built.
+Tested with two stand-in cameras and the web app in Chrome: an MJPEG board
+(the Pi node fed by a test pattern with a box that walks through a zone) and
+an RTSP camera with sound (a real baby-cry recording from ESC-50, 40 s on and
+50 s off). Pairing, WebRTC and MJPEG video, offline detection, recording,
+motion events (only inside the zone), cry events (a dog bark scores 0, the
+cry 0.4–0.98), clips that play and seek in Chrome, thumbnails, save, delete,
+zones and settings saved on the hub. **Not yet run on a Pi, as a Docker
+container, or against a real RTSP camera, USB webcam, microphone or a real
+baby.** Of the image, only the go2rtc build stage has been built. Detection
+thresholds are untuned: expect to adjust sensitivity on real scenes.
 
 Known limits:
 
@@ -75,4 +89,9 @@ Known limits:
   it). Open the web app over http on your network for now.
 - MJPEG cameras are converted to H.264 for WebRTC in software, about one
   CPU core per camera being watched on a Pi 4.
-- No recording, motion or cry detection, or alerts yet.
+- No alerts (push) yet.
+- Recording copies the camera's video; cameras that send H.265 are
+  converted to H.264 (CPU heavy on a Pi). MJPEG boards are converted too.
+- Motion can't tell a person from a shadow or a moving tree; cry detection
+  can't tell crying from a similar sound (a cat, a toy).
+- Deleting a clip deletes it for every viewer.
