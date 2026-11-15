@@ -118,7 +118,11 @@ void net_start(void)
 {
     load_settings();
     s_setup = !s_ssid[0];
-    ESP_LOGI(TAG, s_setup ? "Emulator build: no Wi-Fi saved (setup mode)" : "Emulator build: Wi-Fi \"%s\" saved", s_ssid);
+    if (s_setup) {
+        ESP_LOGI(TAG, "Emulator build: no Wi-Fi saved (setup mode)");
+    } else {
+        ESP_LOGI(TAG, "Emulator build: Wi-Fi \"%s\" saved", s_ssid);
+    }
 
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
