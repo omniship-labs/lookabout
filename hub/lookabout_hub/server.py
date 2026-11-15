@@ -30,6 +30,9 @@ from .accounts import Accounts, Problem, public_member
 from .bridge import BridgeError
 from .cameras import BadCamera, clean_camera, public_camera, usb_cameras
 from .discovery import local_addresses
+from .oidc import Federation, SignInError, safe_return
+from .vault import Vault
+from . import webauthn
 from .page import PAGE
 
 MAX_BODY = 256 * 1024
@@ -38,9 +41,10 @@ MAX_BODY = 256 * 1024
 class Hub:
     """The parts of the hub, bundled for the request handler."""
 
-    def __init__(self, store, pairing, bridge, monitor, name, port, data_dir, clips=None, accounts=None):
+    def __init__(self, store, pairing, bridge, monitor, name, port, data_dir, clips=None, accounts=None, federation=None):
         self.store, self.pairing, self.bridge, self.monitor = store, pairing, bridge, monitor
         self.accounts = accounts or Accounts(store)
+        self.federation = federation or Federation(self.accounts, Vault(os.path.join(data_dir, "keys")))
         self.name, self.port, self.data_dir = name, port, data_dir
         self.clips = clips            # recordings and event clips
         self.watchers = None          # recording, motion and cry workers, set once the hub is built
@@ -290,7 +294,9 @@ def make_handler(hub):
             try:
                 self._raw = self._read_body()
                 origin = self.headers.get("Origin")
-                if origin and self.command in ("POST", "PUT", "PATCH", "DELETE") and not self._origin_ok(origin):
+                # Apple posts its answer from its own site; state, nonce and the state cookie guard that route.
+                if (origin and self.command in ("POST", "PUT", "PATCH", "DELETE") and not self._origin_ok(origin)
+                        and path != ["api", "auth", "callback", "apple"]):
                     raise Reply(403, "That request didn't come from the hub's own page.", "bad_origin")
                 self._route(self.command, path)
             except Reply as reply:
@@ -327,9 +333,21 @@ def make_handler(hub):
                 case ("GET", "auth", "providers"):
                     return self._json({"hub": {"id": store.hub_id(), "name": hub.name},
                                        "setup_required": accounts.setup_needed(),
-                                       "providers": [{"id": "local", "password": True, "passkey": False}]})
+                                       "providers": hub.federation.list_for_sign_in()})
                 case ("POST", "auth", "login", "local"):
                     return self._login()
+                case ("POST", "auth", "passkey", "options"):
+                    return self._passkey_sign_in_options()
+                case ("POST", "auth", "login", "passkey"):
+                    return self._login_passkey()
+                case ("POST", "auth", "login", ("google" | "apple") as provider):
+                    return self._provider_login(provider, None)
+                case ("GET", "auth", "callback", ("google") as provider):
+                    return self._callback(provider, {k: v[0] for k, v in self.query.items()})
+                case ("POST", "auth", "callback", ("apple") as provider):
+                    return self._callback(provider, {k: v[0] for k, v in parse_qs(self._raw.decode("utf-8", "replace")).items()})
+                case ("POST", "auth", "token"):
+                    return self._app_token()
                 case ("POST", "auth", "join"):
                     return self._join()
                 case ("GET", "setup", "state"):
@@ -370,6 +388,34 @@ def make_handler(hub):
                     if not accounts.end_session(session_id, who.member["id"]):
                         raise Reply(404, "There is no such device.")
                     return self._json({"removed": session_id})
+                case ("GET", "me", "passkeys"):
+                    self._member(who)
+                    return self._json({"passkeys": accounts.passkeys(who.member["id"]), "this_address": self._rp_id()})
+                case ("POST", "me", "passkeys", "options"):
+                    self._member(who)
+                    return self._passkey_register_options(who)
+                case ("POST", "me", "passkeys"):
+                    self._member(who)
+                    return self._passkey_register(who)
+                case ("DELETE", "me", "passkeys", credential_id):
+                    self._member(who)
+                    accounts.remove_passkey(who.member["id"], credential_id, hub.federation.local()["password"])
+                    return self._json({"removed": credential_id})
+                case ("POST", "me", "link", ("google" | "apple") as provider):
+                    self._member(who)
+                    return self._provider_login(provider, who.member["id"])
+                case ("DELETE", "me", "link", ("google" | "apple") as provider):
+                    self._member(who)
+                    accounts.unlink(who.member["id"], provider, hub.federation.local()["password"])
+                    return self._json({"removed": provider})
+                case ("GET", "admin", "auth", "providers"):
+                    self._admin(who)
+                    return self._json(hub.federation.settings())
+                case ("PUT", "admin", "auth", "providers"):
+                    self._admin(who)
+                    settings = hub.federation.update(self._data())
+                    accounts.audit(who.member["id"], "providers-changed")
+                    return self._json(settings)
                 case ("GET", "household"):
                     self._member(who)
                     return self._json(self._household(who))
@@ -543,7 +589,9 @@ def make_handler(hub):
                 "session": {k: who.session[k] for k in ("id", "kind", "device", "expires")},
                 "cameras": who.levels(),
                 "groups": accounts.group_levels(row),
-                "sign_in": {"password": bool(row["password_hash"]), "passkeys": 0, "google": None, "apple": None},
+                "sign_in": {"password": bool(row["password_hash"]), "passkeys": len(accounts.passkeys(member["id"])),
+                            "google": accounts.identities(member["id"]).get("google"),
+                            "apple": accounts.identities(member["id"]).get("apple"), "address": self._rp_id()},
             }
 
         def _session_json(self, session, who):
@@ -567,15 +615,141 @@ def make_handler(hub):
                 members.append(item)
             return {"household": head, "members": members, "groups": accounts.groups()}
 
-        def _login(self):
-            data, app = self._data(), (self.query.get("app") or [""])[0] == "1"
-            member, token = hub.accounts.login(data.get("email"), data.get("password"), self._address(),
-                                               "app" if app else "browser", str(data.get("device") or "")[:60])
+        def _signed_in(self, member, token, app, status=200):
+            """Answers a successful sign-in: the cookie for a browser, the token for an app."""
             me = public_member(member)
             if app:
-                return self._json({"token": token, "me": me})
+                return self._json({"token": token, "me": me}, status)
             self._session_cookie(token, int(hub.accounts._lifetime()))
-            self._json({"me": me})
+            self._json({"me": me}, status)
+
+        def _login(self):
+            data, app = self._data(), (self.query.get("app") or [""])[0] == "1"
+            if not hub.federation.local()["password"]:
+                raise Reply(403, "Passwords are turned off on this hub. Use a passkey or another sign-in.", "password_off")
+            member, token = hub.accounts.login(data.get("email"), data.get("password"), self._address(),
+                                               "app" if app else "browser", str(data.get("device") or "")[:60])
+            self._signed_in(member, token, app)
+
+        def _rp_id(self):
+            """The address passkeys are made for: the name or address this page was opened on, without the port."""
+            return urlsplit("//" + (self.headers.get("Host") or "")).hostname or ""
+
+        def _passkey_sign_in_options(self):
+            if not hub.federation.local()["passkey"]:
+                raise Reply(403, "Passkeys are turned off on this hub.", "passkey_off")
+            rp_id = self._rp_id()
+            challenge = hub.accounts.new_challenge("login", None, rp_id)
+            self._json({"options": {"challenge": challenge, "rpId": rp_id, "timeout": 60000,
+                                    "userVerification": "preferred", "allowCredentials": []}})
+
+        def _passkey_parts(self, *names):
+            """The credential from the request: its id and the base64url fields asked for, as bytes."""
+            credential = self._data().get("credential")
+            response = credential.get("response") if isinstance(credential, dict) else None
+            if not isinstance(response, dict) or not isinstance(credential.get("id"), str):
+                raise Reply(400, "That passkey answer wasn't valid.")
+            try:
+                return credential["id"], [webauthn.b64u_decode(response.get(n) or "") for n in names]
+            except webauthn.PasskeyError as err:
+                raise Reply(400, str(err)) from None
+
+        def _login_passkey(self):
+            app = (self.query.get("app") or [""])[0] == "1"
+            if not hub.federation.local()["passkey"]:
+                raise Reply(403, "Passkeys are turned off on this hub.", "passkey_off")
+            address = self._address()
+            hub.accounts.check_lock(("passkey", address))
+            credential_id, (client_data, auth_data, signature) = self._passkey_parts(
+                "clientDataJSON", "authenticatorData", "signature")
+            try:
+                challenge = json.loads(client_data).get("challenge", "")
+                taken = hub.accounts.take_challenge(challenge, "login")
+                saved = hub.accounts.passkey(credential_id)
+                member = hub.accounts.member(saved["member_id"]) if saved else None
+                if not taken or not member or member["status"] != "active" or saved["rp_id"] != taken[1]:
+                    raise webauthn.PasskeyError("That passkey isn't known on this hub, or the request ran out.")
+                counter = webauthn.verify_assertion(client_data, auth_data, signature, challenge, self._origin_ok,
+                                                    saved["public_key"], saved["counter"], taken[1])
+            except (webauthn.PasskeyError, ValueError, AttributeError) as err:
+                hub.accounts.note_failure(("passkey", address))
+                hub.accounts.audit("", "sign-in-failed", f"passkey from {address}")
+                raise Reply(401, str(err) if isinstance(err, webauthn.PasskeyError) else "That passkey answer wasn't valid.",
+                            "bad_sign_in") from None
+            hub.accounts.use_passkey(saved["id"], counter)
+            token = hub.accounts.create_session(member["id"], "app" if app else "browser", str(self._data().get("device") or "")[:60])
+            hub.accounts.audit(member["id"], "sign-in", f"passkey from {address}")
+            self._signed_in(member, token, app)
+
+        def _passkey_register_options(self, who):
+            accounts, rp_id = hub.accounts, self._rp_id()
+            member = accounts.member(who.member["id"])
+            challenge = accounts.new_challenge("register", member["id"], rp_id)
+            self._json({"options": {
+                "challenge": challenge, "rp": {"id": rp_id, "name": hub.name}, "timeout": 60000, "attestation": "none",
+                "user": {"id": webauthn.b64u_encode(member["id"].encode()), "name": member["email"],
+                         "displayName": member["name"] or member["email"]},
+                "pubKeyCredParams": [{"type": "public-key", "alg": alg} for alg in webauthn.ALGORITHMS],
+                "authenticatorSelection": {"residentKey": "required", "requireResidentKey": True, "userVerification": "preferred"},
+                "excludeCredentials": [{"type": "public-key", "id": p["id"]} for p in accounts.passkeys(member["id"])
+                                       if p["rp_id"] == rp_id]}})
+
+        def _passkey_register(self, who):
+            accounts = hub.accounts
+            data = self._data()
+            credential_id, (client_data, attestation) = self._passkey_parts("clientDataJSON", "attestationObject")
+            try:
+                challenge = json.loads(client_data).get("challenge", "")
+                taken = accounts.take_challenge(challenge, "register")
+                if not taken or taken[0] != who.member["id"]:
+                    raise webauthn.PasskeyError("That passkey request ran out. Try again.")
+                made = webauthn.verify_registration(client_data, attestation, challenge, self._origin_ok)
+                if made["rp_id"] != taken[1] or made["credential_id"] != credential_id:
+                    raise webauthn.PasskeyError("That passkey was made for a different address.")
+            except (webauthn.PasskeyError, ValueError, AttributeError) as err:
+                raise Reply(400, str(err) if isinstance(err, webauthn.PasskeyError) else "That passkey answer wasn't valid.",
+                            "bad_passkey") from None
+            accounts.add_passkey(who.member["id"], made, data.get("name"))
+            self._json({"passkeys": accounts.passkeys(who.member["id"])}, 201)
+
+        def _provider_login(self, provider, link_member):
+            """Starts Google or Apple sign-in (or linking one to the signed-in member): answers where to send the browser."""
+            data = self._data()
+            if data.get("app") and not data.get("code_challenge"):
+                raise Reply(400, "An app sign-in needs a code challenge.")
+            url, state = hub.federation.begin(provider, data.get("return_to"), "link" if link_member else "login", link_member,
+                                              str(data.get("code_challenge") or "") if data.get("app") else None)
+            # Apple answers with a POST from its own site, so its cookie has to cross sites (it needs https, as Apple does).
+            same_site = "None; Secure" if provider == "apple" else "Lax"
+            self._cookies.append(("Set-Cookie", f"lk_oauth={state}; Path=/api/auth/callback; HttpOnly; SameSite={same_site}; Max-Age=600"))
+            self._json({"redirect": url})
+
+        def _callback(self, provider, params):
+            jar = cookies.SimpleCookie(self.headers.get("Cookie") or "")
+            self._cookies.append(("Set-Cookie", "lk_oauth=; Path=/api/auth/callback; HttpOnly; Max-Age=0"))
+            try:
+                done = hub.federation.finish(provider, params, jar["lk_oauth"].value if "lk_oauth" in jar else "")
+            except SignInError as err:
+                return self._redirect(f"/#/signin?error={err.code}&message={quote(err.message)}")
+            member = done["member"]
+            if done["purpose"] == "link":
+                return self._redirect(done["return_to"])
+            if done["app_challenge"]:
+                return self._redirect("lookabout://hub/signed-in?code=" + hub.federation.app_code(member["id"], done["app_challenge"]))
+            self._session_cookie(hub.accounts.create_session(member["id"], "browser", provider.capitalize()),
+                                 int(hub.accounts._lifetime()))
+            self._redirect(safe_return(done["return_to"]))
+
+        def _redirect(self, location):
+            self._send(302, "text/plain", b"", [("Location", location)])
+
+        def _app_token(self):
+            data = self._data()
+            member_id = hub.federation.swap_code(data.get("code"), data.get("code_verifier"))
+            member = hub.accounts.member(member_id)
+            token = hub.accounts.create_session(member_id, "app", str(data.get("device") or "")[:60])
+            hub.accounts.audit(member_id, "sign-in", "app code")
+            self._json({"token": token, "me": public_member(member)})
 
         def _join(self):
             data, app = self._data(), (self.query.get("app") or [""])[0] == "1"

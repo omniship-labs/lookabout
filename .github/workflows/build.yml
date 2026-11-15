@@ -40,7 +40,7 @@ jobs:
         with:
           python-version: "3.13"
       # Needs numpy and ffmpeg (preinstalled on the runner); go2rtc and the model are not needed.
-      - run: pip install numpy coverage
+      - run: pip install numpy coverage cryptography
       # Floor in hub/.coveragerc.
       - run: python3 -m coverage run -m unittest discover -s tests -v
         working-directory: hub

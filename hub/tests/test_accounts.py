@@ -381,7 +381,7 @@ class AccessTest(HubCase):
     def test_me(self):
         me = self.call("GET", "/api/me", token=self.admin)[1]
         self.assertEqual((me["member"]["role"], me["cameras"], me["groups"]), ("admin", "all", "all"))
-        self.assertEqual(me["sign_in"], {"password": True, "passkeys": 0, "google": None, "apple": None})
+        self.assertEqual(me["sign_in"], {"password": True, "passkeys": 0, "google": None, "apple": None, "address": "127.0.0.1"})
         self.assertEqual(me["household"]["name"], "Test hub")
         self.assertEqual(self.call("GET", "/api/me", token=self.other)[1]["cameras"], {})
         self.assertNotIn("password", str(self.call("GET", "/api/me", token=self.admin)[1]).replace("'password': True", ""))

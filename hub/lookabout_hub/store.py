@@ -66,6 +66,24 @@ CREATE TABLE IF NOT EXISTS grants (
     by TEXT NOT NULL DEFAULT '',               -- who made it: an admin, or the manager who shared the group
     PRIMARY KEY (member_id, group_id)
 );
+CREATE TABLE IF NOT EXISTS passkeys (
+    id TEXT PRIMARY KEY,                       -- the credential id, base64url
+    member_id TEXT NOT NULL,
+    public_key TEXT NOT NULL,                  -- PEM
+    counter INTEGER NOT NULL DEFAULT 0,
+    rp_id TEXT NOT NULL,                       -- the address it was made for (home name or public name)
+    name TEXT NOT NULL DEFAULT '',
+    created REAL NOT NULL,
+    last_used REAL NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS identities (
+    provider TEXT NOT NULL,                    -- google | apple
+    sub TEXT NOT NULL,
+    member_id TEXT NOT NULL,
+    email TEXT NOT NULL DEFAULT '',
+    created REAL NOT NULL,
+    PRIMARY KEY (provider, sub)
+);
 CREATE TABLE IF NOT EXISTS audit (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     at REAL NOT NULL, actor TEXT NOT NULL DEFAULT '', action TEXT NOT NULL, detail TEXT NOT NULL DEFAULT ''

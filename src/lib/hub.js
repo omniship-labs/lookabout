@@ -101,6 +101,37 @@ export async function joinHub(address, invite, name, password, device = '') {
   return { address, token: j.token, member: j.me, id: info.id, name: info.name };
 }
 
+/** A challenge for signing in with a passkey (no account needed first). */
+export async function passkeySignInOptions(address) {
+  return (await request(address, '/api/auth/passkey/options', { method: 'POST', body: {} })).json();
+}
+
+/** Finish a passkey sign-in with what the device answered (see passkey.js). */
+export async function passkeySignIn(address, credential, device = '') {
+  const res = await request(address, '/api/auth/login/passkey?app=1', { method: 'POST', body: { credential, device } });
+  const j = await res.json();
+  const info = await hubInfo(address);
+  return { address, token: j.token, member: j.me, id: info.id, name: info.name };
+}
+
+/** The passkeys this member has on the hub, and the address this page is opened on. */
+export const hubPasskeys = (hub) => hubGet(hub, '/api/me/passkeys');
+export const passkeyRegisterOptions = (hub) => hubSend(hub, 'POST', '/api/me/passkeys/options', {});
+export const passkeyRegister = (hub, credential, name) => hubSend(hub, 'POST', '/api/me/passkeys', { credential, name });
+export const removePasskey = (hub, id) => hubSend(hub, 'DELETE', `/api/me/passkeys/${encodeURIComponent(id)}`);
+
+/** Where to send the browser for "Continue with Google / Apple". Resolves with the address. */
+export async function providerSignInAddress(address, provider, returnTo = '/') {
+  return (await (await request(address, `/api/auth/login/${provider}`, { method: 'POST', body: { return_to: returnTo } })).json()).redirect;
+}
+
+/** What the sign-in screen's error says, from the hub's `/#/signin?error=…&message=…` redirect. '' when none. */
+export function signInErrorFromHash(hash) {
+  const query = (hash || '').split('?')[1] || '';
+  const params = new URLSearchParams(query);
+  return params.get('error') ? params.get('message') || 'That sign-in didn’t work.' : '';
+}
+
 /** The invite code inside a link the hub made (`…/#/join?invite=CODE`), or ''. */
 export function inviteFromLink(text) {
   const m = /[#&?]invite=([A-Za-z0-9_-]+)/.exec(text || '');

@@ -15,6 +15,7 @@ DAY = 86400
 SESSION_DAYS, REMOTE_SESSION_DAYS = 30, 7      # Q1: shorter while remote access is on
 INVITE_DAYS = 7
 TICKET_SECONDS = 300
+CHALLENGE_SECONDS = 300
 AUDIT_DAYS = 90
 MAX_FAILURES, FAILURE_WINDOW = 10, 900          # 10 failed sign-ins in 15 minutes lock that account from that address
 MAX_SETUP_WRONG = 5
@@ -86,6 +87,7 @@ class Accounts:
         self._failures = {}        # (email, address) -> times of failed sign-ins
         self._tickets = {}         # ticket hash -> (member id, camera id, expires)
         self._setup_code, self._setup_wrong = None, 0
+        self._challenges = {}      # passkey challenges: challenge -> (purpose, member id, address, expires)
 
     # --- setup code and first admin --------------------------------------
 
@@ -184,7 +186,8 @@ class Accounts:
             raise Problem(409, "The hub needs at least one admin.")
         with self._lock:
             self.store._run("DELETE FROM sessions WHERE member_id = ?", (member_id,))
-            self.store._run("DELETE FROM grants WHERE member_id = ?", (member_id,))
+            for table in ("grants", "passkeys", "identities"):
+                self.store._run(f"DELETE FROM {table} WHERE member_id = ?", (member_id,))
             self.store._run("DELETE FROM members WHERE id = ?", (member_id,))
 
     def set_name(self, member_id, name):
@@ -201,8 +204,8 @@ class Accounts:
                         (hash_password(new), int(len(new) >= STRONG_PASSWORD), member["id"]))
 
     def strong(self, member):
-        """Q3: what remote access needs of every admin. (Passkeys will count here too.)"""
-        return bool(member["strong"])
+        """Q3: what remote access needs of every admin: a passkey, or a password of 14+ characters."""
+        return bool(member["strong"]) or bool(self.passkeys(member["id"]))
 
     # --- sign-in ----------------------------------------------------------
 
@@ -220,18 +223,12 @@ class Accounts:
 
     def login(self, email, password, address, kind="browser", device=""):
         email = str(email or "").strip().lower()
-        key, now = (email, address), self._clock()
-        with self._lock:
-            recent = [t for t in self._failures.get(key, []) if now - t < FAILURE_WINDOW]
-            self._failures[key] = recent
-            if len(recent) >= MAX_FAILURES:
-                wait = max(1, int(recent[0] + FAILURE_WINDOW - now))
-                raise Problem(429, "Too many tries. Wait a while and try again.", retry_after=wait)
+        key = (email, address)
+        self.check_lock(key)
         member = self.store._one("SELECT * FROM members WHERE email = ?", (email,))
         stored = member["password_hash"] if member and member["status"] == "active" else DUMMY
         if not check_password(str(password or ""), stored) or not member or member["status"] != "active":
-            with self._lock:
-                self._failures.setdefault(key, []).append(now)
+            self.note_failure(key)
             self.audit(member["id"] if member else "", "sign-in-failed", f"{email} from {address}")
             raise Problem(401, "That email and password don't match.", "bad_sign_in")
         with self._lock:
@@ -239,6 +236,19 @@ class Accounts:
         token = self.create_session(member["id"], kind, device)
         self.audit(member["id"], "sign-in", f"{kind} from {address}")
         return member, token
+
+    def check_lock(self, key):
+        """Raises 429 when too many sign-ins from this address (for this account) have failed lately."""
+        now = self._clock()
+        with self._lock:
+            recent = [t for t in self._failures.get(key, []) if now - t < FAILURE_WINDOW]
+            self._failures[key] = recent
+            if len(recent) >= MAX_FAILURES:
+                raise Problem(429, "Too many tries. Wait a while and try again.", retry_after=max(1, int(recent[0] + FAILURE_WINDOW - now)))
+
+    def note_failure(self, key):
+        with self._lock:
+            self._failures.setdefault(key, []).append(self._clock())
 
     def create_session(self, member_id, kind, device=""):
         token = secrets.token_urlsafe(32)
@@ -446,6 +456,114 @@ class Accounts:
             raise Problem(403, "Only whoever shared this, or an admin, can take it back.", "not_yours")
         self.store._run("DELETE FROM grants WHERE member_id = ? AND group_id = ?", (target_id, group_id))
         self.audit(by["id"], "unshare", f"{group_id} from {target_id}")
+
+    # --- passkeys ------------------------------------------------------------
+
+    def new_challenge(self, purpose, member_id, rp_id):
+        challenge, now = secrets.token_urlsafe(32), self._clock()
+        with self._lock:
+            self._challenges = {k: v for k, v in self._challenges.items() if v[3] > now}
+            self._challenges[challenge] = (purpose, member_id, rp_id, now + CHALLENGE_SECONDS)
+        return challenge
+
+    def peek_challenge(self, challenge):
+        """(purpose, member id, address) of a live challenge, without using it up."""
+        found = self._challenges.get(challenge)
+        return found[:3] if found and found[3] > self._clock() else None
+
+    def take_challenge(self, challenge, purpose):
+        """Uses a challenge up. (member id, address), or None if it is wrong, used or run out."""
+        with self._lock:
+            found = self._challenges.pop(challenge, None)
+        if not found or found[0] != purpose or found[3] <= self._clock():
+            return None
+        return found[1], found[2]
+
+    def passkeys(self, member_id):
+        return self.store._all("SELECT id, name, rp_id, created, last_used FROM passkeys WHERE member_id = ? ORDER BY created",
+                               (member_id,))
+
+    def passkey(self, credential_id):
+        return self.store._one("SELECT * FROM passkeys WHERE id = ?", (str(credential_id),))
+
+    def add_passkey(self, member_id, credential, name):
+        """Q2: one per address, so a second one for the same address replaces nothing: it is refused."""
+        if self.passkey(credential["credential_id"]):
+            raise Problem(409, "That passkey is already on this hub.")
+        if self.store._one("SELECT 1 FROM passkeys WHERE member_id = ? AND rp_id = ?", (member_id, credential["rp_id"])):
+            raise Problem(409, f"You already have a passkey for {credential['rp_id']}. Remove it first to add another.")
+        name = str(name or "").strip()[:40] or f"Passkey for {credential['rp_id']}"
+        self.store._run("INSERT INTO passkeys (id, member_id, public_key, counter, rp_id, name, created) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (credential["credential_id"], member_id, credential["public_key"], credential["counter"],
+                         credential["rp_id"], name, self._clock()))
+        self.audit(member_id, "passkey-added", credential["rp_id"])
+
+    def use_passkey(self, credential_id, counter):
+        self.store._run("UPDATE passkeys SET counter = ?, last_used = ? WHERE id = ?", (counter, self._clock(), credential_id))
+
+    def remove_passkey(self, member_id, credential_id, password_on=True):
+        if not self.store._one("SELECT 1 FROM passkeys WHERE id = ? AND member_id = ?", (credential_id, member_id)):
+            raise Problem(404, "You have no such passkey.")
+        if self.ways_in(member_id, password_on) < 2:
+            raise Problem(409, "That's your last way to sign in. Add another first.")
+        self.store._run("DELETE FROM passkeys WHERE id = ?", (credential_id,))
+        self.audit(member_id, "passkey-removed", credential_id[:12])
+
+    # --- Google and Apple identities ----------------------------------------------
+
+    def identities(self, member_id):
+        return {r["provider"]: r["email"] for r in self.store._all(
+            "SELECT provider, email FROM identities WHERE member_id = ?", (member_id,))}
+
+    def ways_in(self, member_id, password_on=True):
+        member = self.member(member_id)
+        password = 1 if member and member["password_hash"] and password_on else 0
+        return password + len(self.passkeys(member_id)) + len(self.identities(member_id))
+
+    def unlink(self, member_id, provider, password_on=True):
+        if provider not in self.identities(member_id):
+            raise Problem(404, "That account isn't linked.")
+        if self.ways_in(member_id, password_on) < 2:
+            raise Problem(409, "That's your last way to sign in. Add another first.")
+        self.store._run("DELETE FROM identities WHERE member_id = ? AND provider = ?", (member_id, provider))
+        self.audit(member_id, "unlinked", provider)
+
+    def every_admin_has_other_way(self, password_off, passkey_on):
+        """Could passwords be turned off (and passkeys stay on or off) without locking an admin out?"""
+        for admin in self.admins():
+            others = len(self.identities(admin["id"])) + (len(self.passkeys(admin["id"])) if passkey_on else 0)
+            if password_off and not others:
+                return False
+        return True
+
+    def resolve_identity(self, provider, sub, email, verified, name, purpose, member_id):
+        """Who a Google or Apple sign-in is. Raises SignInError-like Problem for the sign-in screen."""
+        from .oidc import SignInError
+        known = self.store._one("SELECT member_id FROM identities WHERE provider = ? AND sub = ?", (provider, sub))
+        if purpose == "link":
+            if known and known["member_id"] != member_id:
+                raise SignInError("That account is already linked to someone else here.", "already_linked")
+            if not known:
+                self.store._run("INSERT INTO identities (provider, sub, member_id, email, created) VALUES (?, ?, ?, ?, ?)",
+                                (provider, sub, member_id, email, self._clock()))
+                self.audit(member_id, "linked", provider)
+            return self.member(member_id)
+        if known:
+            member = self.member(known["member_id"])
+            if member and member["status"] == "active":
+                self.audit(member["id"], "sign-in", provider)
+                return member
+        pending = self.store._one("SELECT * FROM members WHERE email = ? AND status = 'invited' AND invite_expires > ?",
+                                  (email, self._clock())) if email and verified else None
+        if not pending:
+            self.audit("", "sign-in-refused", f"{provider} {email}")
+            raise SignInError("This account isn't part of this household. Ask an admin to invite you.", "not_invited")
+        self.store._run("UPDATE members SET status = 'active', name = ?, invite_hash = '', invite_expires = 0 WHERE id = ?",
+                        ((name or email.split("@")[0])[:40], pending["id"]))
+        self.store._run("INSERT INTO identities (provider, sub, member_id, email, created) VALUES (?, ?, ?, ?, ?)",
+                        (provider, sub, pending["id"], email, self._clock()))
+        self.audit(pending["id"], "invite-accepted", provider)
+        return self.member(pending["id"])
 
     # --- media tickets ----------------------------------------------------
 

@@ -3,6 +3,7 @@ import { navigate } from '../lib/router.js';
 import { addCameras, addHubCamera, getState, refreshHub, setHub, unpairHub, useStore } from '../lib/store.js';
 import { hubGet, hubInfo, hubTestCamera, inviteFromLink, joinHub, normalizeHubAddress, pairWithHub, setUpHub, signInToHub } from '../lib/hub.js';
 import { passwordProblem } from '../lib/access.js';
+import { passkeyAddressOk, passkeysSupported, signInWithPasskey } from '../lib/passkey.js';
 import { blockedByHttps, codeReady, findHub, freeSpace, typedAddress } from '../lib/hubPairing.js';
 import { addGroups, connectKinds, guidedFlows, nestCams, ringCams, teslaClips, wyzeCams } from '../lib/sampleData.js';
 import { BackBar, CheckMark, Cta, Eyebrow, Field, Group, Note, Page, Pill, Row, RowText, Spacer, StatusBox, Steps, display, mono } from '../components/ui.jsx';
@@ -557,6 +558,30 @@ const pairSteps = [
         ) : null}
         {values.setup || values.invite ? (
           <Field label="Your name" value={values.person || ''} maxLength={40} onChange={(e) => set({ person: e.target.value })} autoComplete="name" />
+        ) : null}
+        {!values.setup && !values.invite && !values.code && passkeysSupported() ? (
+          <>
+            <Cta
+              variant="outline"
+              onClick={async () => {
+                const address = values.base || normalizeHubAddress(typedAddress(values));
+                if (!passkeyAddressOk(new URL(address).hostname)) {
+                  set({ passkeyError: 'Passkeys need the hub’s name (such as raspberrypi.local), not its IP address.' });
+                  return;
+                }
+                try {
+                  set({ passkeyError: '' });
+                  setHub(await signInWithPasskey(address, (values.name ?? '').trim() || thisDeviceName()));
+                  await refreshHub();
+                } catch (err) {
+                  set({ passkeyError: err.message });
+                }
+              }}
+            >
+              Sign in with a passkey
+            </Cta>
+            {values.passkeyError ? <Note size={13} style={{ color: 'var(--osl-danger)' }}>{values.passkeyError}</Note> : null}
+          </>
         ) : null}
         {!values.invite ? (
           <Field label="Email" type="email" value={values.email || ''} onChange={(e) => set({ email: e.target.value })} autoCapitalize="off" autoComplete="email" spellCheck={false} />

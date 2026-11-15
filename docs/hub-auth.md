@@ -1,10 +1,12 @@
 # Hub accounts and access: API contract
 
 Status: **owner's answers in (15 Nov 2026), ready for sign-off** (issue #48).
-Built in the hub so far (G3, `hub/lookabout_hub/accounts.py`, `server.py`): local accounts, first
-admin, sessions, invites, camera groups and grants, sharing, tickets, the audit log, route
-enforcement and no CORS, the move from pairing keys. **Not built:** passkeys, Google and Apple
-sign-in, `/api/auth/token`, provider settings, the setup wizard endpoints and remote access.
+Built in the hub so far (G3, `hub/lookabout_hub/accounts.py`, `webauthn.py`, `oidc.py`, `vault.py`, `server.py`):
+local accounts, passkeys, Google and Apple sign-in, the app token exchange, provider settings, first admin,
+sessions, invites, camera groups and grants, sharing, tickets, the audit log, route enforcement and no CORS, the
+move from pairing keys. **Not built:** the setup wizard endpoints (`/api/setup/{flow}…`) and remote access.
+Passkeys, Google and Apple are tested against stand-ins (a software authenticator, a fake provider): **never tried
+with a real device, Google account or Apple developer account.**
 Where the build added to or settled something this document left open, it says so under
 [As built](#as-built). Task numbers below are the GitHub issues' titles:
 G1–G10 are #48–#57 (epic #13), F1 is #43, F5 is #47, E4 is #39. The hub today has pairing keys only (B3, `hub/lookabout_hub/pairing.py`);
@@ -597,3 +599,30 @@ Details the first build settled (G3):
 - Tickets are kept in memory: a hub restart ends them.
 - The session cookie is `Secure` when the request carries `X-Forwarded-Proto: https`.
 - `OPTIONS` answers 405: nothing is allowed cross-origin.
+- **Passkeys.** `POST /api/auth/passkey/options` (open) → `{ options }` with a challenge and the hub's address as
+  `rpId` (the host in the address bar, without the port); `POST /api/auth/login/passkey` `{ credential }` signs in
+  (cookie, or `?app=1`). Adding one: `POST /api/me/passkeys/options`, then `POST /api/me/passkeys`
+  `{ credential, name }`. `GET /api/me/passkeys` lists them with the address each works on (`rp_id`) and
+  `this_address`; `DELETE /api/me/passkeys/{id}`. Challenges last 5 minutes and work once. Attestation is not
+  checked (a passkey proves the key, not the make of device). ES256, EdDSA and RS256 keys. A sign count that
+  doesn't go up is refused as a copied key. One passkey per member per address (Q2), made as discoverable
+  credentials so no email is needed. WebAuthn needs a host name, not an IP address: a hub opened as
+  `http://192.168.1.5:8787` can't use passkeys (browsers refuse); `lookabout.local` can.
+- **Google and Apple.** `POST /api/auth/login/{google|apple}` `{ return_to, app?, code_challenge? }` → `{ redirect }`
+  and a `lk_oauth` state cookie (`SameSite=None; Secure` for Apple, whose answer is a cross-site POST, so Apple's
+  callback is the one route that skips the Origin check; state, nonce and the cookie guard it). The callback
+  redirects to `return_to` (a path on the hub only) with the session cookie, or to
+  `/#/signin?error=<code>&message=…` with `not_invited`, `bad_state`, `cancelled`, `provider_refused`,
+  `unreachable`, `already_linked` or `sign_in_failed`. Google uses PKCE; Apple's client secret is made per request
+  from the `.p8` key (ES256, 10 minutes). ID tokens must be RS256 with a key from the provider's published set.
+- **Apps.** With `app: true` and a `code_challenge` (S256) the callback ends on
+  `lookabout://hub/signed-in?code=…`; `POST /api/auth/token` `{ code, code_verifier, device }` → `{ token, me }`.
+  The code works once, for 5 minutes, and a wrong verifier uses it up.
+- **Linking.** `POST /api/me/link/{google|apple}` starts the same dance for the signed-in member;
+  `DELETE /api/me/link/{provider}` refuses (409) if it is their last way in. Passkeys count as ways in too.
+- **Provider settings.** `GET`/`PUT /api/admin/auth/providers` as drawn above, plus `local.password` and
+  `local.passkey` switches. Turning Google or Apple on needs `public_url` on https and the client details, but
+  **not yet** a passed wizard (G8, G9 aren't built): the hub says what is missing. Passwords can't be turned off
+  while an admin has no passkey or linked account; both can't be off. Secrets are sealed with a key in
+  `keys/vault.key` on the volume (mode 600) and never returned.
+- Passkeys count as a strong credential (Q3) for remote access.

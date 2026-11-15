@@ -52,8 +52,13 @@ Hubs that were paired before accounts keep working **read-only** until the
 first admin is made; making the first admin ends every old pairing key, and
 each device signs in once.
 
-Not built yet: passkeys, Google and Apple sign-in, the setup wizards and
-remote access (see `docs/hub-auth.md` and epic #13).
+- Passkeys (one per address) and, once an admin has set up their own Google or Apple
+  keys under `PUT /api/admin/auth/providers`, "Continue with Google / Apple" for invited
+  people. Provider secrets are encrypted with a key file in `keys/` on the volume.
+
+Not built yet: the setup wizard endpoints and remote access (see
+`docs/hub-auth.md` and epic #13). Passkeys, Google and Apple are tested against
+stand-ins only.
 
 Settings live in `docker-compose.yml`:
 

@@ -18,6 +18,14 @@ from lookabout_hub.pairing import Pairing  # noqa: E402
 from lookabout_hub.server import Hub, make_server  # noqa: E402
 from lookabout_hub.store import Store  # noqa: E402
 
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):      # a redirect is an answer to look at, not to follow
+        return None
+
+
+OPENER = urllib.request.build_opener(_NoRedirect)
 PASSWORD = "correct horse battery"   # 21 characters, so a strong credential
 JPEG = b"\xff\xd8fake\xff\xd9"
 
@@ -75,15 +83,21 @@ class HubCase(unittest.TestCase):
         if token:
             request.add_header("Authorization", f"Bearer {token}")
         try:
-            with urllib.request.urlopen(request, timeout=5) as response:
+            with OPENER.open(request, timeout=5) as response:
                 payload, status, got = response.read(), response.status, response.headers
         except urllib.error.HTTPError as err:
             payload, status, got = err.read(), err.code, err.headers
+        if not raw and status in (301, 302, 303):
+            payload = b'{}'
         return status, payload if raw else json.loads(payload), got
 
     def call(self, method, path, body=None, token=None, headers=None, raw=False):
         status, payload, _ = self.send(method, path, body, token, headers, raw)
         return status, payload
+
+    def member(self, email="sam@example.com"):
+        """A member by email. (Ordering by time isn't reliable here: the test clock stands still.)"""
+        return next(m for m in self.accounts.members() if m["email"] == email)
 
     def signin(self, email="sam@example.com", password=PASSWORD):
         """A bearer token for a member. The first call makes the first admin."""
