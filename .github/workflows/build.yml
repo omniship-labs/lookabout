@@ -1,7 +1,8 @@
 name: Build
 
-# Checks on every pull request: the web app builds, and the web, hub and Pi
-# camera node tests pass without coverage falling below each part's floor.
+# Checks on every pull request: the web app builds, the web, hub and Pi camera
+# node tests pass without coverage falling below each part's floor, and the
+# ESP32 firmware builds and passes its tests in the QEMU emulator.
 
 on:
   pull_request:
@@ -64,3 +65,39 @@ jobs:
           { echo "### Pi camera node coverage"; python3 -m coverage report --format=markdown; } >> "$GITHUB_STEP_SUMMARY" || true
           python3 -m coverage report
         working-directory: firmware/rpi
+
+  # The ESP32 camera firmware: build it for the real board, then run an
+  # emulator build in QEMU and drive it over HTTP (firmware/esp32/qemu).
+  esp32:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v5.3.2
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the real firmware (ESP32-S3)
+        working-directory: firmware/esp32
+        run: |
+          . "$IDF_PATH/export.sh"
+          idf.py -B build-s3 -DIDF_TARGET=esp32s3 -DSDKCONFIG=build-s3/sdkconfig build
+      - name: Build the emulator images
+        run: |
+          . "$IDF_PATH/export.sh"
+          firmware/esp32/qemu/build.sh
+      - name: Install QEMU
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends libgcrypt20 libglib2.0-0 libpixman-1-0 libsdl2-2.0-0 libslirp0
+          python3 "$IDF_PATH/tools/idf_tools.py" install qemu-xtensa
+      - name: Run the firmware in QEMU
+        run: |
+          . "$IDF_PATH/export.sh"
+          export QEMU="$(command -v qemu-system-xtensa || ls "${IDF_TOOLS_PATH:-$HOME/.espressif}"/tools/qemu-xtensa/*/qemu/bin/qemu-system-xtensa | head -1)"
+          "$QEMU" --version
+          python3 firmware/esp32/qemu/test_board.py
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: esp32-qemu-logs
+          path: firmware/esp32/qemu/out/logs

@@ -8,7 +8,7 @@ each of `firmware/esp32`, `firmware/rpi`, `ios`, `android` has its own README.
 | Piece | Folder | State |
 |---|---|---|
 | Web app | `src/` | Builds. Main screens checked in a browser (light and dark, phone/tablet/desktop). |
-| ESP32-S3 + USB webcam firmware | `firmware/esp32/` | Compiles. **Never run on a board.** |
+| ESP32-S3 + USB webcam firmware | `firmware/esp32/` | Compiles. Web interface, settings and updates tested in QEMU (`firmware/esp32/qemu`). **Never run on a board.** |
 | Raspberry Pi camera node | `firmware/rpi/` | Server tested with a stand-in video source. **Never run on a Pi.** |
 | Android app | `android/` | Builds. Start, viewer tabs and live video from a test stream checked on an emulator. |
 | iOS app | `ios/` | Sources type-check. **Never built or run** (no iOS simulator runtime on this Mac). |
@@ -66,7 +66,10 @@ Ordered by what unblocks the most. Each task says what "done" means.
       video in the Cameras grid.
 - [ ] **A5. Wi-Fi firmware update against the real board** from web, Android
       and iOS. Done: version changes after restart; pulling power mid-update
-      leaves the old firmware running.
+      leaves the old firmware running. The board side of this (new version
+      after restart, cut-off upload, power cut mid-update, a file that isn't
+      firmware) passes in the QEMU emulator tests; still to do on a board and
+      from each app.
 - [ ] **A6. Android USB flashing.** `android/.../net/Firmware.kt` implements
       the ESP32 bootloader protocol from documentation and is the least
       certain code in the repo. Done: a blank board flashed from a phone.
@@ -408,8 +411,10 @@ Design states that need live data can be forced on web with `?state=`
   `src/lib/` (no React or JSX imports) with a `node:test` file in `tests/`;
   screens call it. `npm test` runs them in plain Node, even where `npm install`
   doesn't work, and the `web` PR check runs them too. Hub changes get cases in
-  `hub/tests/`, Pi camera node changes in `firmware/rpi/tests/`. Still without
-  tests: the ESP32 firmware (C, needs a board or an emulator), the Android and
+  `hub/tests/`, Pi camera node changes in `firmware/rpi/tests/`, ESP32
+  firmware changes in `firmware/esp32/qemu/test_board.py` (the firmware runs
+  in QEMU in the `esp32` PR check; Wi-Fi, the USB webcam and flashing still
+  need a board). Still without tests: the Android and
   iOS apps (no test targets yet), `store.js`, `flash.js` and `camera.js`'s
   device camera parts (need React or browser APIs), the hub's mDNS
   (`discovery.py`) and the ffmpeg commands inside the hub's workers.

@@ -242,6 +242,11 @@ static esp_err_t update_handler(httpd_req_t *req)
     }
     free(chunk);
 
+    if (err == ESP_ERR_OTA_VALIDATE_FAILED) {
+        // esp_ota_write checks the image header on the first chunk: not a firmware file.
+        esp_ota_abort(ota);
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "That file is not a valid Lookabout firmware image");
+    }
     if (err != ESP_OK || remaining != 0) {
         esp_ota_abort(ota);
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Update was interrupted; the camera kept its current firmware");

@@ -8,3 +8,9 @@ hub/data/
 *.pyc
 .coverage
 htmlcov/
+firmware/esp32/build-*/
+firmware/esp32/qemu/out/
+firmware/esp32/managed_components/
+firmware/esp32/dependencies.lock
+firmware/esp32/sdkconfig
+firmware/esp32/sdkconfig.old

@@ -1,0 +1,13 @@
+menu "Lookabout"
+
+config LOOKABOUT_EMULATOR
+    bool "Build for the QEMU emulator (tests only)"
+    default n
+    select ETH_USE_OPENETH
+    help
+        Replaces Wi-Fi with QEMU's emulated Ethernet and the USB webcam with
+        a generated test picture, so the board's web interface and firmware
+        updates can be tested in QEMU (firmware/esp32/qemu). Never flash
+        this build onto a real board.
+
+endmenu
