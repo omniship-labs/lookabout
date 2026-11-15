@@ -80,7 +80,8 @@ jobs:
         working-directory: firmware/esp32
         run: |
           . "$IDF_PATH/export.sh"
-          idf.py -B build-s3 -DIDF_TARGET=esp32s3 -DSDKCONFIG=build-s3/sdkconfig build
+          # PlatformIO keeps the app in src/; plain ESP-IDF needs telling.
+          idf.py -B build-s3 -DIDF_TARGET=esp32s3 -DSDKCONFIG=build-s3/sdkconfig -DEXTRA_COMPONENT_DIRS="$PWD/src" build
       - name: Build the emulator images
         run: |
           . "$IDF_PATH/export.sh"
