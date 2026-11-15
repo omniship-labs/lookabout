@@ -1,7 +1,7 @@
 name: Build
 
-# Checks on every pull request: the web app builds and its tests pass, and the
-# hub's and the Pi camera node's tests pass.
+# Checks on every pull request: the web app builds, and the web, hub and Pi
+# camera node tests pass without coverage falling below each part's floor.
 
 on:
   pull_request:
@@ -28,7 +28,8 @@ jobs:
           # @omniship-labs/design-beacon comes from GitHub Packages.
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm run build
-      - run: npm test
+      # Runs the tests and fails if web coverage drops below its floor (scripts/coverage.mjs).
+      - run: npm run coverage
 
   hub:
     runs-on: ubuntu-latest
@@ -38,8 +39,13 @@ jobs:
         with:
           python-version: "3.13"
       # Needs numpy and ffmpeg (preinstalled on the runner); go2rtc and the model are not needed.
-      - run: pip install numpy
-      - run: python3 -m unittest discover -s tests -v
+      - run: pip install numpy coverage
+      # Floor in hub/.coveragerc.
+      - run: python3 -m coverage run -m unittest discover -s tests -v
+        working-directory: hub
+      - run: |
+          { echo "### Hub coverage"; python3 -m coverage report --format=markdown; } >> "$GITHUB_STEP_SUMMARY" || true
+          python3 -m coverage report
         working-directory: hub
 
   pi-node:
@@ -49,6 +55,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      # Standard library only, like the node itself.
-      - run: python3 -m unittest discover -s tests -v
+      # The node is standard library only; coverage is just for measuring it.
+      - run: pip install coverage
+      # Floor in firmware/rpi/.coveragerc.
+      - run: python3 -m coverage run -m unittest discover -s tests -v
+        working-directory: firmware/rpi
+      - run: |
+          { echo "### Pi camera node coverage"; python3 -m coverage report --format=markdown; } >> "$GITHUB_STEP_SUMMARY" || true
+          python3 -m coverage report
         working-directory: firmware/rpi

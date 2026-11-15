@@ -412,7 +412,18 @@ Design states that need live data can be forced on web with `?state=`
   tests: the ESP32 firmware (C, needs a board or an emulator), the Android and
   iOS apps (no test targets yet), `store.js`, `flash.js` and `camera.js`'s
   device camera parts (need React or browser APIs), the hub's mDNS
-  (`discovery.py`) and the ffmpeg commands inside the hub's workers. A component that can't be tested this way is checked in a
+  (`discovery.py`) and the ffmpeg commands inside the hub's workers.
+- **Coverage floors keep it honest.** The PR check fails if coverage drops
+  below each part's floor. Web: `npm run coverage`, floors and the list of
+  untested `src/lib` files in `scripts/coverage.mjs`; a new `src/lib` file with
+  no tests fails the check until it has tests or is listed with a reason. Hub
+  and Pi node: `fail_under` in `hub/.coveragerc` and `firmware/rpi/.coveragerc`
+  (`python3 -m coverage run -m unittest discover -s tests && python3 -m coverage report`).
+  On 15 Nov 2026: web 84% lines / 97% branches / 83% functions of the files
+  tests load (JSX screens aren't measured), hub 71%, Pi node 80% (Python
+  figures are lines and branches together). Floors sit about a point below.
+  Raise a floor when tests add coverage (the web script says when it's 3+
+  points over); never lower one to get a change through. A component that can't be tested this way is checked in a
   browser instead, and the handover says so until someone has.
 
 - `npm install` needs `NODE_AUTH_TOKEN` for the org's GitHub Packages registry.

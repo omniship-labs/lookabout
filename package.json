@@ -13,7 +13,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "firmware:package": "node scripts/package-firmware.mjs",
-    "test": "node --test 'tests/**/*.test.mjs'"
+    "test": "node --test 'tests/**/*.test.mjs'",
+    "coverage": "node scripts/coverage.mjs"
   },
   "dependencies": {
     "@omniship-labs/design-beacon": "^0.1.0",
