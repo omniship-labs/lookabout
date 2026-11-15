@@ -4,8 +4,8 @@ import { activeIndex, finishCheck, finishesFlow, localProgress, reopen, restore,
 import { Bar, Cta, Eyebrow, Note, Pill, cardStyle, display, mono } from './ui.jsx';
 import { CheckIcon, LockIcon, SpinnerIcon, WarningIcon } from './icons.jsx';
 
-// Shared step UI for setup flows (HANDOVER G2): hub pairing today; hub
-// install, remote access, Google and Apple sign-in next (G6–G9).
+// Shared step UI for setup flows (issue #49): hub pairing today; hub
+// install, remote access, Google and Apple sign-in next (issues #53–#56).
 //
 // <Wizard flow="hub-pair" steps={[...]} onDone={(values) => …} />
 //

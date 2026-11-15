@@ -1,4 +1,4 @@
-// State for setup wizards (HANDOVER G2). Kept apart from the component so the
+// State for setup wizards (issue #49). Kept apart from the component so the
 // rules can be checked without a browser.
 //
 // A wizard's progress is { steps: { [stepId]: { state, reason, summary } }, values }.

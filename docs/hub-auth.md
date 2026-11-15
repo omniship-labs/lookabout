@@ -1,7 +1,8 @@
 # Hub accounts and access: API contract
 
-Status: **owner's answers in (15 Nov 2026), ready for sign-off** (HANDOVER G1).
-Nothing here is built yet. The hub today has pairing keys only (B3, `hub/lookabout_hub/pairing.py`);
+Status: **owner's answers in (15 Nov 2026), ready for sign-off** (issue #48).
+Nothing here is built yet. Task numbers below are the GitHub issues' titles:
+G1–G10 are #48–#57 (epic #13), F1 is #43, F5 is #47, E4 is #39. The hub today has pairing keys only (B3, `hub/lookabout_hub/pairing.py`);
 this document is what replaces them. It is written to be language-neutral:
 the hub is Python (B9), but nothing below depends on that.
 

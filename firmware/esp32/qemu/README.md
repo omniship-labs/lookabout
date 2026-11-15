@@ -18,7 +18,7 @@ things and nothing else:
 It runs on QEMU's **classic ESP32** machine, whose network emulation is the
 reliable one; nothing under test depends on the chip. So these tests don't
 cover the Wi-Fi radio, the USB webcam, the S3 itself, or flashing over USB.
-Those still need a board (HANDOVER A1–A6).
+Those still need a board (issues #14–#18 and #29).
 
 What they do cover (`test_board.py`): status, the setup page, snapshot, the
 MJPEG stream, the four-viewer limit, Wi-Fi details and name saved and kept

@@ -8,7 +8,7 @@
 //
 // Raise the floors when tests add coverage; never lower them to get a change
 // through. Screens and components (JSX) aren't measured: they're checked in a
-// browser (see HANDOVER).
+// browser (see AGENTS.md).
 
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, readdirSync } from 'node:fs';
