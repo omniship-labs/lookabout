@@ -40,6 +40,8 @@ BOOT_S = float(os.environ.get("LK_BOOT_S", "120"))
 
 BOOTED = "Lookabout camera firmware"
 ONLINE = "Online. Camera address"
+# What the firmware logs just before esp_restart() (Wi-Fi saved, update done).
+RESTARTING = re.compile(r"(Wi-Fi details saved|Firmware updated), restarting")
 
 
 def free_port():
@@ -60,23 +62,36 @@ class Board:
         self.proc = None
         self.log = []
         self._lock = threading.Lock()
+        self._on = False
+        self._boot_at = 0  # where in the log the current QEMU run started
 
     # --- the emulator ---------------------------------------------------
 
     def power_on(self):
-        self.port = free_port()
+        self.port = self.port or free_port()
+        self._on = True
+        self._launch()
+        self.wait_ready(boots=self.boots() + 1)
+        return self
+
+    def _launch(self):
+        # -no-reboot: QEMU's ESP32 doesn't come back cleanly from a software
+        # reset (it panics early in the next boot), so a restart makes QEMU
+        # exit and _read_log starts it again from the same flash, like a
+        # board coming back up.
+        with self._lock:
+            self._boot_at = len(self.log)
         self.proc = subprocess.Popen([
-            QEMU, "-nographic", "-machine", "esp32",
+            QEMU, "-nographic", "-no-reboot", "-machine", "esp32",
             "-drive", f"file={self.flash},if=mtd,format=raw",
             "-nic", f"user,model=open_eth,hostfwd=tcp:127.0.0.1:{self.port}-:80",
             "-global", "driver=timer.esp32.timg,property=wdt_disable,value=true",
         ], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         threading.Thread(target=self._read_log, args=(self.proc,), daemon=True).start()
-        self.wait_ready(boots=self.boots() + 1)
-        return self
 
     def power_off(self):
         """Pulls the plug: no shutdown, whatever was being written stays half-written."""
+        self._on = False
         if self.proc and self.proc.poll() is None:
             self.proc.kill()
             self.proc.wait(10)
@@ -94,6 +109,13 @@ class Board:
             with self._lock:
                 self.log.append(raw.decode(errors="replace"))
         proc.stdout.close()
+        proc.wait()
+        # The firmware asked for a restart: bring the board back up. Anything
+        # else (a crash) leaves it down, and the test waiting on it fails.
+        with self._lock:
+            this_run = "".join(self.log[self._boot_at:])
+        if self._on and proc is self.proc and RESTARTING.search(this_run):
+            self._launch()
 
     def text(self):
         with self._lock:
@@ -107,7 +129,8 @@ class Board:
         while time.time() < deadline:
             if len(re.findall(pattern, self.text())) >= count:
                 return
-            if self.proc and self.proc.poll() is not None:
+            proc = self.proc
+            if proc and proc.poll() is not None and proc is self.proc and not RESTARTING.search(self.text()[-4000:]):
                 raise AssertionError(f"QEMU stopped (exit {self.proc.returncode}). Log:\n{self.text()[-3000:]}")
             time.sleep(0.2)
         raise AssertionError(f"Waited {timeout:.0f} s for {pattern!r} x{count}. Log:\n{self.text()[-3000:]}")
@@ -173,6 +196,17 @@ class BoardTest(unittest.TestCase):
         self.board = Board(self.id().split(".")[-1])
         self.addCleanup(self.board.close)
         self.board.power_on()
+
+    def run(self, result=None):
+        # On a failure, print the end of the board's serial log, so CI output has it.
+        result = result if result is not None else self.defaultTestResult()
+        before = len(result.failures) + len(result.errors)
+        super().run(result)
+        board = getattr(self, "board", None)
+        if len(result.failures) + len(result.errors) > before and board is not None:
+            print(f"\n----- serial log of {board.name} (last 4000 chars) -----\n"
+                  + board.text()[-4000:] + "\n-----", flush=True)
+        return result
 
 
 class FreshBoardTest(BoardTest):
@@ -279,10 +313,13 @@ class FreshBoardTest(BoardTest):
         self.assertEqual(self.board.status()["firmware"], "emu-a")
 
     def test_update_refuses_a_file_too_big_for_the_slot(self):
+        # The server only calls the handler once some of the body is in, so
+        # send a first piece, as any uploader would.
         conn = self.board.connect()
         conn.putrequest("POST", "/api/update")
         conn.putheader("Content-Length", str(64 * 1024 * 1024))
         conn.endheaders()
+        conn.send(b"\xe9" + bytes(4095))
         res = conn.getresponse()
         self.assertEqual(res.status, 400)
         self.assertIn(b"too large", res.read())

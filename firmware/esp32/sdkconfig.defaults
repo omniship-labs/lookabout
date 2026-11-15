@@ -1,6 +1,7 @@
 # Lookabout ESP32-S3 camera
 # Two app slots for over-Wi-Fi updates; needs 4 MB of flash or more.
-CONFIG_PARTITION_TABLE_TWO_OTA_LARGE=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 
 # UVC cameras have large configuration descriptors.

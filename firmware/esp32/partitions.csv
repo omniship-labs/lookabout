@@ -1,0 +1,11 @@
+# Lookabout camera: two app slots so the board can be updated over Wi-Fi.
+# Same offsets the published firmware already uses (otadata at 0xf000, the
+# app at 0x20000), so the web page and the apps flash it the same way.
+# Needs 4 MB of flash. Used by PlatformIO (platformio.ini) and ESP-IDF
+# (sdkconfig.defaults) alike.
+# Name,   Type, SubType, Offset,   Size
+nvs,      data, nvs,     0x9000,   0x6000
+otadata,  data, ota,     0xf000,   0x2000
+phy_init, data, phy,     0x11000,  0x1000
+ota_0,    app,  ota_0,   0x20000,  0x1e0000
+ota_1,    app,  ota_1,   0x200000, 0x1e0000

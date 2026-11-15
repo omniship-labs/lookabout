@@ -63,6 +63,11 @@ static void stream_task(void *arg)
             }
         }
         free(buf);
+    } else {
+        // No memory for another viewer: say so rather than leave it waiting.
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        allow_any_origin(req);
+        httpd_resp_sendstr(req, "Not enough memory for another viewer");
     }
     httpd_req_async_handler_complete(req);
     atomic_fetch_sub(&s_viewers, 1);
@@ -95,7 +100,9 @@ static esp_err_t snapshot_handler(httpd_req_t *req)
 {
     uint8_t *buf = camera_alloc_frame();
     if (!buf) {
-        return httpd_resp_send_500(req);
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        allow_any_origin(req);
+        return httpd_resp_sendstr(req, "Not enough memory right now; try again");
     }
     uint32_t seq = 0;
     size_t len = camera_wait_frame(&seq, buf, LK_FRAME_MAX, pdMS_TO_TICKS(1500));
