@@ -309,6 +309,28 @@ class RoutesTest(unittest.TestCase):
         self.call("DELETE", f"/api/cameras/{self.camera['id']}")
         self.assertEqual(self.store.zones(self.camera["id"])["zones"], [])
 
+    def test_events_can_be_filtered(self):
+        cam = self.store.camera(self.camera["id"])
+        old = self.store.add_event("motion", cam, started=1000, ended=1010, detail="Door zone")
+        cry = self.store.add_event("crying", cam, started=2000, ended=2040)
+        new = self.store.add_event("motion", cam, started=3000)
+        ids = lambda q: [e["id"] for e in self.call("GET", "/api/events" + q)[1]["events"]]
+        self.assertEqual(ids(""), [new, cry, old], "newest first")
+        self.assertEqual(ids("?kind=motion"), [new, old])
+        self.assertEqual(ids("?since=2000"), [new, cry], "since is inclusive")
+        self.assertEqual(ids("?limit=1"), [new])
+        self.assertEqual(ids("?limit=0"), [new], "at least one")
+        self.assertEqual(ids("?since=1500&kind=motion"), [new])
+        event = self.call("GET", "/api/events?kind=motion&since=0")[1]["events"][1]
+        self.assertEqual({k: event[k] for k in ("kind", "camera_id", "camera", "started", "ended", "detail", "clip", "thumb")},
+                         {"kind": "motion", "camera_id": cam["id"], "camera": "Garage", "started": 1000, "ended": 1010,
+                          "detail": "Door zone", "clip": None, "thumb": None})
+        self.assertIsNone(self.call("GET", "/api/events")[1]["events"][0]["ended"], "still going on")
+        status, body = self.call("DELETE", f"/api/events/{old}")
+        self.assertEqual((status, body), (200, {"removed": old}))
+        self.assertEqual(self.call("DELETE", f"/api/events/{old}")[0], 404)
+        self.assertEqual(self.call("DELETE", "/api/events/nope")[0], 404)
+
     def test_cameras_say_when_motion_is_going_on(self):
         self.assertFalse(self.call("GET", "/api/cameras")[1]["cameras"][0]["motion"])
         self.store.add_event("motion", self.store.camera(self.camera["id"]))

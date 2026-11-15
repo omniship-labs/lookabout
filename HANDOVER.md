@@ -387,6 +387,7 @@ npm run firmware:package
 # Home hub (on the Pi; then open http://<pi>:8787)
 cd hub && docker compose up -d --build
 python3 -m unittest discover -s hub/tests     # hub tests, anywhere
+(cd firmware/rpi && python3 -m unittest discover -s tests)   # Pi camera node tests, anywhere
 
 # Pi camera node (on the Pi)
 cd firmware/rpi && ./install.sh
@@ -407,7 +408,11 @@ Design states that need live data can be forced on web with `?state=`
   `src/lib/` (no React or JSX imports) with a `node:test` file in `tests/`;
   screens call it. `npm test` runs them in plain Node, even where `npm install`
   doesn't work, and the `web` PR check runs them too. Hub changes get cases in
-  `hub/tests/`. A component that can't be tested this way is checked in a
+  `hub/tests/`, Pi camera node changes in `firmware/rpi/tests/`. Still without
+  tests: the ESP32 firmware (C, needs a board or an emulator), the Android and
+  iOS apps (no test targets yet), `store.js`, `flash.js` and `camera.js`'s
+  device camera parts (need React or browser APIs), the hub's mDNS
+  (`discovery.py`) and the ffmpeg commands inside the hub's workers. A component that can't be tested this way is checked in a
   browser instead, and the handover says so until someone has.
 
 - `npm install` needs `NODE_AUTH_TOKEN` for the org's GitHub Packages registry.

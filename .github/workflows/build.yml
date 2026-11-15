@@ -1,6 +1,7 @@
 name: Build
 
-# Checks that the web app still builds and its tests and the hub's tests pass on every pull request.
+# Checks on every pull request: the web app builds and its tests pass, and the
+# hub's and the Pi camera node's tests pass.
 
 on:
   pull_request:
@@ -40,3 +41,14 @@ jobs:
       - run: pip install numpy
       - run: python3 -m unittest discover -s tests -v
         working-directory: hub
+
+  pi-node:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      # Standard library only, like the node itself.
+      - run: python3 -m unittest discover -s tests -v
+        working-directory: firmware/rpi
