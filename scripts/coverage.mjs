@@ -27,6 +27,9 @@ const UNTESTED = {
 
 const run = spawnSync(process.execPath, [
   '--test',
+  // A fixed reporter, so the report below always has the same shape
+  // (Node 24's default for CI is 'spec', which prefixes lines differently).
+  '--test-reporter=tap',
   '--experimental-test-coverage',
   '--test-coverage-include=src/lib/**',
   `--test-coverage-lines=${FLOORS.lines}`,
@@ -37,10 +40,11 @@ const run = spawnSync(process.execPath, [
 process.stdout.write(run.stdout);
 process.stderr.write(run.stderr);
 
-const report = run.stdout.slice(run.stdout.indexOf('# start of coverage report'), run.stdout.indexOf('# end of coverage report'));
-const measured = new Set([...report.matchAll(/^#\s+([\w.-]+\.js)\s+\|/gm)].map((m) => m[1]));
+const report = run.stdout.slice(run.stdout.search(/^[#ℹ] start of coverage report/m), run.stdout.search(/^[#ℹ] end of coverage report/m));
+const measured = new Set([...report.matchAll(/^[#ℹ]\s+([\w.-]+\.js)\s+\|/gm)].map((m) => m[1]));
 const files = readdirSync('src/lib').filter((f) => f.endsWith('.js'));
 const problems = [];
+if (!measured.size) problems.push('No coverage report found in the test output; the script needs updating for this Node version.');
 for (const f of files) {
   if (!measured.has(f) && !UNTESTED[f]) problems.push(`src/lib/${f} has no tests. Add some in tests/, or list it in UNTESTED in scripts/coverage.mjs with the reason.`);
   if (measured.has(f) && UNTESTED[f]) problems.push(`src/lib/${f} has tests now: take it off UNTESTED in scripts/coverage.mjs.`);
@@ -49,7 +53,7 @@ for (const f of Object.keys(UNTESTED)) {
   if (!files.includes(f)) problems.push(`UNTESTED in scripts/coverage.mjs lists ${f}, which isn't in src/lib any more.`);
 }
 
-const total = report.match(/^# all files\s+\|\s+([\d.]+)\s+\|\s+([\d.]+)\s+\|\s+([\d.]+)/m);
+const total = report.match(/^[#ℹ] all files\s+\|\s+([\d.]+)\s+\|\s+([\d.]+)\s+\|\s+([\d.]+)/m);
 if (process.env.GITHUB_STEP_SUMMARY) {
   const rows = total
     ? [['lines', total[1]], ['branches', total[2]], ['functions', total[3]]].map(([k, v]) => `| ${k} | ${v}% | ${FLOORS[k]}% |`)
