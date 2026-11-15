@@ -100,7 +100,8 @@ export const addGroups = [
   {
     label: 'SMALL BOARDS AND HUB',
     rows: [
-      { ab: 'USB', t: 'USB webcam on the hub', s: 'Home server or NAS · 2 found', tag: 'hub', to: '/add/usb' },
+      { ab: 'HUB', t: 'Home hub', s: 'Raspberry Pi, home server or NAS · brings in the cameras below', to: '/add/hub' },
+      { ab: 'USB', t: 'USB webcam on the hub', s: 'Plugged into the home hub', tag: 'hub', to: '/add/usb' },
       { ab: 'PI', t: 'Raspberry Pi camera', s: 'Pi camera module or USB webcam, on your Wi-Fi', tag: 'live', to: '/add/pi' },
       { ab: 'ESP', t: 'ESP32 camera', s: 'ESP32-S3 with a USB webcam, on your Wi-Fi', tag: 'live', to: '/add/esp32' },
     ],
@@ -110,15 +111,15 @@ export const addGroups = [
     rows: [
       { ab: 'IP', t: 'Any RTSP or ONVIF camera', s: 'Reolink, Tapo, Amcrest, Hikvision and most IP cams', tag: 'hub', to: '/add/rtsp' },
       { ab: 'EU', t: 'Eufy', s: 'Models with NAS (RTSP) in the eufy app', tag: 'hub', to: '/add/eufy' },
-      { ab: 'NE', t: 'Google Nest', s: 'Official Google API · Google charges a sign-up fee', tag: 'hub', to: '/add/nest' },
-      { ab: 'RI', t: 'Ring', s: 'Doorbells and cams · unofficial connection', tag: 'hub', to: '/add/ring' },
-      { ab: 'WY', t: 'Wyze', s: 'Cams on your network · unofficial connection', tag: 'hub', to: '/add/wyze' },
+      { ab: 'NE', t: 'Google Nest', s: 'Official Google API · Google charges a sign-up fee', tag: 'hub', to: '/add/nest', sample: true },
+      { ab: 'RI', t: 'Ring', s: 'Doorbells and cams · unofficial connection', tag: 'hub', to: '/add/ring', sample: true },
+      { ab: 'WY', t: 'Wyze', s: 'Cams on your network · unofficial connection', tag: 'hub', to: '/add/wyze', sample: true },
     ],
   },
   {
     label: 'CLIPS ONLY',
     rows: [
-      { ab: 'TS', t: 'Tesla Sentry & Dashcam', s: 'Imports saved clips from the car’s USB drive', tag: 'clips', to: '/add/tesla' },
+      { ab: 'TS', t: 'Tesla Sentry & Dashcam', s: 'Imports saved clips from the car’s USB drive', tag: 'clips', to: '/add/tesla', sample: true },
     ],
   },
 ];
@@ -131,7 +132,7 @@ export const connectKinds = {
       ['Copy the stream address it shows and paste it below.'],
     ],
     address: 'rtsp://192.168.1.42/live0',
-    hint: 'Hub found 1 camera on your network that matches. Give the camera a fixed IP in your router so this address doesn’t change.',
+    hint: 'Give the camera a fixed IP in your router so this address doesn’t change.',
     name: 'Front door',
     source: 'Eufy via hub',
     device: 'EUFY',
@@ -150,26 +151,7 @@ export const connectKinds = {
   },
 };
 
-export const usbCams = [
-  { id: 'u1', t: 'Logitech C920', s: 'USB port 1 · 1080p', on: true },
-  { id: 'u2', t: 'Generic UVC camera', s: 'USB port 3 · 720p', on: false },
-];
-
 export const guidedFlows = {
-  hub: {
-    title: 'Set up a home hub',
-    intro: 'Optional. Runs on a home server, NAS or Raspberry Pi 4/5. Adds recording, clips and cameras you already own.',
-    steps: [
-      'Install the hub with Docker on your server or NAS.',
-      'Open the hub page on your network and show its pairing code.',
-      'Scan it here, then pick where recordings are stored.',
-    ],
-    code: 'docker run -d --name lookabout-hub \\\n  --network host [IMAGE NAME TBD]',
-    statusLabel: 'HUB FOUND ON YOUR NETWORK',
-    status: 'lookabout-hub · 412 GB free',
-    cta: 'Pair this hub',
-    foot: 'Without a hub everything still works live, phone to phone.',
-  },
   pi: {
     title: 'Add a Raspberry Pi camera',
     intro: 'A Pi with a camera module or USB webcam becomes an always-on camera that reports to your hub.',

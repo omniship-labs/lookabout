@@ -10,6 +10,8 @@ This repo is a monorepo:
   as camera, desktop/tablet/phone viewer, typed pairing.
 - [`firmware/esp32/`](firmware/esp32/) — ESP32-S3 + USB webcam camera (PlatformIO, ESP-IDF).
 - [`firmware/rpi/`](firmware/rpi/) — Raspberry Pi camera node (Python, systemd).
+- [`hub/`](hub/) — home hub (Python + go2rtc, Docker): brings ESP32 / Pi / RTSP / USB
+  cameras to paired viewers over WebRTC.
 - [`ios/`](ios/) — SwiftUI app (XcodeGen project).
 - [`android/`](android/) — Kotlin/Compose app.
 
@@ -21,7 +23,7 @@ npm run dev
 npm run build
 ```
 
-Every pull request is built by `.github/workflows/build.yml`. A push to `main`
+Every pull request is built by `.github/workflows/build.yml` (which also runs the hub's tests). A push to `main`
 publishes `dist` to GitHub Pages through `.github/workflows/deploy.yml` (Pages
 has to be switched on in the repo settings first).
 
@@ -37,21 +39,26 @@ src/
 ├─ screens/              one file per area: Start, Camera, Live, Cameras, Settings, Add, Pairing
 └─ lib/
    ├─ sampleData.js      the design's sample content (stands in for live data)
-   ├─ store.js           settings (localStorage) + cameras
+   ├─ store.js           settings (localStorage), cameras, the paired hub
+   ├─ hub.js             requests to the home hub (pairing, cameras, events, WebRTC)
    ├─ camera.js          this device's camera and mic
-   ├─ snapshot.js        save a frame from a camera added by address
+   ├─ snapshot.js        save a frame from a camera (by address or through the hub)
    └─ router.js, hooks.js
 ```
 
 ### What is real and what is sample
 
 Real: the camera role (device camera and mic, dimming, pause/stop), themes,
-settings, motion-zone editing, and **cameras added by address** (ESP32 or
-Raspberry Pi on the same network — their video shows in the viewer).
+settings, motion-zone editing, **cameras added by address** (ESP32 or
+Raspberry Pi on the same network — their video shows in the viewer), and the
+**home hub**: pair with it (Cameras → **+** → *Home hub*), and the Cameras
+grid, live view, Events and Paired devices show what the hub has. Hub
+cameras play over WebRTC, falling back to MJPEG.
 
-Sample (from `src/lib/sampleData.js`): the nursery room, house cameras,
-events, clips and sound levels. Pairing, peer-to-peer streaming and the home
-hub are not built yet.
+Sample (from `src/lib/sampleData.js`): the nursery room, sound levels, and —
+only while no hub is paired — the house cameras and events. The Nest, Ring,
+Wyze and Tesla add flows are still sample screens. Phone-to-phone pairing
+and streaming are not built yet.
 
 Some design states only happen with live data. Add `?state=` to see them:
 `#/cameras?state=offline`, `#/cameras?state=ring`,

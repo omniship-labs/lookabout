@@ -253,7 +253,7 @@ export function CameraLive({ scenario }) {
             <Stat label="MIC">{s.cameraMode === 'baby' && s.cryDetection ? 'On · cry detection' : 'On'}</Stat>
             <Stat label="POWER">{power}</Stat>
             <Stat label="UPTIME">{uptime(now - startedAt)}</Stat>
-            <Stat label="HUB">{s.hubPaired ? 'Recording' : 'No hub · live only'}</Stat>
+            <Stat label="HUB">{s.hubPaired ? 'Connected' : 'No hub · live only'}</Stat>
           </div>
 
           <Spacer />

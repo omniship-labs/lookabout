@@ -1,7 +1,8 @@
 import React from 'react';
 import { href } from '../lib/router.js';
-import { useStore } from '../lib/store.js';
-import { applyScenario, clip, clipCount, clipsToday, eventDays, zones as sampleZones } from '../lib/sampleData.js';
+import { hubLine, useStore } from '../lib/store.js';
+import { eventDays as groupByDay } from '../lib/hub.js';
+import { applyScenario, clip, eventDays, zones as sampleZones } from '../lib/sampleData.js';
 import { BackBar, Banner, Chip, Cta, Eyebrow, Group, Note, Page, Row, SliderBar, display, mono } from '../components/ui.jsx';
 import { CameraTile, ClipRow, Shell, ShellHeader, VideoTile } from '../components/viewer.jsx';
 import { PauseIcon, PlayIcon, PlusIcon, WarningIcon } from '../components/icons.jsx';
@@ -16,6 +17,9 @@ export function Cameras({ scenario }) {
 
   const online = cams.filter((c) => c.status === 'online').length;
   const offline = cams.filter((c) => c.status === 'offline');
+  // What the hub recorded since midnight. "Sound" covers crying.
+  const startOfToday = new Date().setHours(0, 0, 0, 0);
+  const today = s.hubEvents.filter((e) => e.startedMs >= startOfToday);
   const pausedBrands = [...new Set(cams.filter((c) => c.status === 'paused').map((c) => c.brand))];
   const firstCam = cams.find((c) => !c.room && c.status === 'online');
   const filters = [
@@ -24,9 +28,10 @@ export function Cameras({ scenario }) {
     { id: 'sound', label: 'Sound' },
     ...(firstCam ? [{ id: `cam:${firstCam.name}`, label: firstCam.name }] : []),
   ];
-  const clips = s.hubPaired
-    ? clipsToday.filter((c) => filter === 'all' || c.kind === filter || `cam:${c.cam}` === filter)
-    : [];
+  const shown = today.filter(
+    (e) => filter === 'all' || e.kind === filter || (filter === 'sound' && e.kind === 'crying') || `cam:${e.cam}` === filter
+  );
+  const clipCount = today.filter((e) => e.clip).length;
 
   return (
     <Shell active="cameras">
@@ -52,9 +57,21 @@ export function Cameras({ scenario }) {
             <PlusIcon size={20} />
           </a>
         }
-        sub={`${online} online · ${s.hubPaired ? `Home hub recording · ${s.keepDays} days kept` : 'No hub · live only'}`}
+        sub={`${online} online · ${hubLine(s)}`}
       />
 
+      {s.hubPaired && !s.hubReachable ? (
+        <div style={{ ...section, paddingBottom: 14 }}>
+          <Banner icon={<WarningIcon size={18} />} title="Can’t reach your home hub">
+            Check that it is switched on and that this device is on your home network. Trying again every few seconds.
+          </Banner>
+        </div>
+      ) : null}
+      {s.hubPaired && !cams.length ? (
+        <div style={{ ...section, paddingBottom: 14 }}>
+          <Note size={13}>Your hub has no cameras yet. Press + to add one.</Note>
+        </div>
+      ) : null}
       {offline.map((c) => (
         <div key={c.id} style={{ ...section, paddingBottom: 14 }}>
           <Banner icon={<WarningIcon size={18} />} title={`${c.name} went offline at ${c.since}`}>
@@ -88,7 +105,7 @@ export function Cameras({ scenario }) {
         <>
           <div style={{ padding: '20px var(--lk-side) 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h2 style={display(19, { letterSpacing: 0 })}>Events today</h2>
-            <span style={{ ...mono(11), color: 'var(--text-muted)' }}>{clipCount} CLIPS</span>
+            {clipCount ? <span style={{ ...mono(11), color: 'var(--text-muted)' }}>{clipCount} CLIPS</span> : null}
           </div>
           <div style={{ ...section, paddingBottom: 12, display: 'flex', gap: 8, overflowX: 'auto' }}>
             {filters.map((f) => (
@@ -96,10 +113,10 @@ export function Cameras({ scenario }) {
             ))}
           </div>
           <div style={{ ...section, paddingBottom: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {clips.map((c) => (
-              <ClipRow key={c.id} title={c.title} meta={c.meta} time={c.time} to="/events/clip" />
+            {shown.map((e) => (
+              <ClipRow key={e.id} title={e.t} meta={e.m} time={e.time} play={false} />
             ))}
-            {!clips.length ? <Note size={13}>No clips match this filter today.</Note> : null}
+            {!shown.length ? <Note size={13}>{today.length ? 'Nothing matches this filter today.' : 'Nothing has happened today.'}</Note> : null}
           </div>
         </>
       ) : null}
@@ -116,8 +133,10 @@ const eventFilters = [
 
 /** Events tab: everything that happened, by day. */
 export function Events() {
+  const s = useStore();
   const [filter, setFilter] = React.useState('all');
-  const days = eventDays
+  // With a hub paired these are the hub's events; otherwise the sample night.
+  const days = (s.hubPaired ? groupByDay(s.hubEvents) : eventDays)
     .map((d) => ({ ...d, items: d.items.filter((e) => filter === 'all' || e.kind === filter) }))
     .filter((d) => d.items.length);
   return (
@@ -133,7 +152,7 @@ export function Events() {
           <React.Fragment key={d.label}>
             <Eyebrow style={{ paddingTop: 6 }}>{d.label}</Eyebrow>
             {d.items.map((e) => (
-              <ClipRow key={e.id} title={e.t} meta={e.m} time={e.time} to="/events/clip" play={false} />
+              <ClipRow key={e.id} title={e.t} meta={e.m} time={e.time} to={s.hubPaired ? undefined : '/events/clip'} play={false} />
             ))}
           </React.Fragment>
         ))}

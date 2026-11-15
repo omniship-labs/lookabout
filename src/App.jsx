@@ -1,14 +1,14 @@
 import React from 'react';
 import '@omniship-labs/design-beacon/styles.css';
 import { useRoute } from './lib/router.js';
-import { useStore } from './lib/store.js';
+import { useHubSync, useStore } from './lib/store.js';
 import { setAnnouncer, useResolvedTheme } from './lib/hooks.js';
 import { Splash, Start } from './screens/Start.jsx';
 import { CameraDenied, CameraLive, CameraSetup } from './screens/Camera.jsx';
 import { Live } from './screens/Live.jsx';
 import { Cameras, Clip, Events, Zones } from './screens/Cameras.jsx';
 import { Devices, Settings } from './screens/Settings.jsx';
-import { AddCamera, ConnectNest, ConnectRing, ConnectStream, ConnectUsb, ConnectWyze, Guided, TeslaClips } from './screens/Add.jsx';
+import { AddCamera, ConnectNest, ConnectRing, ConnectStream, ConnectUsb, ConnectWyze, Guided, HubSetup, TeslaClips } from './screens/Add.jsx';
 import { PairCode, PairDone, PairScan } from './screens/Pairing.jsx';
 import { Flash } from './screens/Flash.jsx';
 
@@ -48,6 +48,7 @@ function screenFor(path, params) {
         case 'usb':
           return <ConnectUsb />;
         case 'hub':
+          return <HubSetup address={params.address} code={params.code} />;
         case 'pi':
         case 'esp32':
           return <Guided key={b} kind={b} />;
@@ -73,6 +74,7 @@ export function App() {
   const { path, params } = useRoute();
   const s = useStore();
   useResolvedTheme(s.theme);
+  useHubSync();
   const [message, setMessage] = React.useState('');
   const [splash, setSplash] = React.useState(() => {
     try {

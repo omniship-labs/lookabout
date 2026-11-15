@@ -1,7 +1,8 @@
 import React from 'react';
 import { navigate } from '../lib/router.js';
-import { addCameras, setState, useStore } from '../lib/store.js';
-import { addGroups, connectKinds, guidedFlows, nestCams, ringCams, teslaClips, usbCams, wyzeCams } from '../lib/sampleData.js';
+import { addCameras, addHubCamera, getState, refreshHub, setHub, unpairHub, useStore } from '../lib/store.js';
+import { hubGet, hubInfo, hubTestCamera, normalizeHubAddress, pairWithHub } from '../lib/hub.js';
+import { addGroups, connectKinds, guidedFlows, nestCams, ringCams, teslaClips, wyzeCams } from '../lib/sampleData.js';
 import { BackBar, CheckMark, Cta, Eyebrow, Field, Group, Note, Page, Pill, Row, RowText, Spacer, StatusBox, Steps, display, mono } from '../components/ui.jsx';
 import { ClipRow, VideoTile } from '../components/viewer.jsx';
 
@@ -27,12 +28,14 @@ export function AddCamera() {
           <Group pad="0">
             {g.rows.map((r) => {
               const needsHub = r.tag === 'hub' && !s.hubPaired;
+              // Sample flows (Nest, Ring, Wyze, Tesla) aren't in the hub yet, so a real hub can't add them.
+              const notYet = r.sample && s.hubPaired;
               return (
                 <Row
                   key={r.ab}
                   minHeight={60}
-                  to={needsHub ? '/add/hub' : r.to}
-                  style={{ padding: '10px 14px', justifyContent: 'flex-start', opacity: needsHub ? 0.6 : 1 }}
+                  to={notYet ? undefined : needsHub ? '/add/hub' : r.to}
+                  style={{ padding: '10px 14px', justifyContent: 'flex-start', opacity: needsHub || notYet ? 0.6 : 1 }}
                 >
                   <span
                     style={{
@@ -51,8 +54,9 @@ export function AddCamera() {
                   >
                     {r.ab}
                   </span>
-                  <RowText title={r.t} sub={needsHub ? 'Set up a hub first' : r.s} weight={600} />
-                  <Pill tone={tags[r.tag].tone} small>{tags[r.tag].label}</Pill>
+                  <RowText title={r.t} sub={notYet ? 'Not in the hub yet' : needsHub ? 'Set up a hub first' : r.s} weight={600} />
+                  {r.tag ? <Pill tone={tags[r.tag].tone} small>{tags[r.tag].label}</Pill> : null}
+                  {r.to === '/add/hub' && s.hubPaired ? <Pill tone="success" small>PAIRED</Pill> : null}
                 </Row>
               );
             })}
@@ -84,26 +88,94 @@ function finish(cameras) {
   navigate('/cameras');
 }
 
+/** Asks the hub to try a camera and keeps the frame it got back. */
+function useHubTest() {
+  const [test, setTest] = React.useState({ status: 'idle' }); // idle | busy | ok | failed
+  React.useEffect(() => () => test.url && URL.revokeObjectURL(test.url), [test.url]);
+  const run = async (camera) => {
+    setTest({ status: 'busy' });
+    try {
+      const frame = await hubTestCamera(getState().hub, camera);
+      setTest({ status: 'ok', url: URL.createObjectURL(frame) });
+    } catch (err) {
+      setTest({ status: 'failed', error: err.message });
+    }
+  };
+  return [test, run];
+}
+
+function TestPreview({ test }) {
+  return (
+    <VideoTile
+      label="Test preview from the camera"
+      height={180}
+      placeholder={test.status === 'busy' ? 'CONNECTING…' : 'TEST PREVIEW'}
+      src={test.url}
+    >
+      {test.status === 'ok' ? <Pill tone="success" style={{ position: 'absolute', top: 12, left: 12 }}>CONNECTED</Pill> : null}
+    </VideoTile>
+  );
+}
+
+/** Adds cameras to the hub one after another; reports the first problem. */
+function useHubAdd() {
+  const [state, setState] = React.useState({ busy: false, error: '' });
+  const add = async (cameras) => {
+    setState({ busy: true, error: '' });
+    try {
+      for (const camera of cameras) await addHubCamera(camera);
+      navigate('/cameras');
+    } catch (err) {
+      setState({ busy: false, error: err.message });
+    }
+  };
+  return [state, add];
+}
+
 /** 8 · Connect via hub: any RTSP / ONVIF camera (Eufy is the worked example). */
 export function ConnectStream({ kind }) {
   const cfg = connectKinds[kind] || connectKinds.rtsp;
-  const [form, setForm] = React.useState({ address: cfg.address, user: 'lookabout', pass: '', name: cfg.name });
+  const [form, setForm] = React.useState({ address: '', user: '', pass: '', name: cfg.name });
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+  const [test, runTest] = useHubTest();
+  const [adding, add] = useHubAdd();
+  const camera = {
+    kind: 'rtsp',
+    address: form.address.trim(),
+    username: form.user,
+    password: form.pass,
+    name: form.name.trim(),
+    device: cfg.device,
+    source: cfg.source,
+  };
   return (
     <FlowPage title={cfg.title}>
       <Steps items={cfg.steps} />
-      <Field label="Stream address" monoFont size={14} value={form.address} onChange={set('address')} hint={cfg.hint} />
+      <Field
+        label="Stream address"
+        monoFont
+        size={14}
+        placeholder={cfg.address}
+        value={form.address}
+        onChange={set('address')}
+        hint={cfg.hint}
+        error={test.status === 'failed' ? test.error : undefined}
+        autoCapitalize="off"
+        spellCheck={false}
+      />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
-        <Field label="Username" size={14} value={form.user} onChange={set('user')} autoComplete="off" />
+        <Field label="Username" size={14} value={form.user} onChange={set('user')} autoComplete="off" autoCapitalize="off" />
         <Field label="Password" size={14} type="password" value={form.pass} onChange={set('pass')} autoComplete="off" />
       </div>
-      <VideoTile label="Test preview from the connected camera" height={180} placeholder="TEST PREVIEW">
-        <Pill tone="success" style={{ position: 'absolute', top: 12, left: 12 }}>CONNECTED</Pill>
-        <span style={{ position: 'absolute', bottom: 12, left: 12, ...mono(11), color: 'var(--text-body)' }}>1080P · H.264 · AUDIO</span>
-      </VideoTile>
-      <Field label="Name" value={form.name} maxLength={24} onChange={set('name')} />
+      <TestPreview test={test} />
+      <Cta variant="outline" disabled={!camera.address || test.status === 'busy'} onClick={() => runTest(camera)}>
+        {test.status === 'busy' ? 'Connecting…' : 'Test the stream'}
+      </Cta>
+      <Field label="Name" value={form.name} maxLength={24} onChange={set('name')} error={adding.error || undefined} />
       <Spacer />
-      <Cta disabled={!form.name.trim()} onClick={() => finish([{ name: form.name.trim(), device: cfg.device, source: cfg.source }])}>Add camera</Cta>
+      <Cta disabled={!camera.name || !camera.address || adding.busy} onClick={() => add([camera])}>
+        {adding.busy ? 'Adding…' : 'Add camera'}
+      </Cta>
       <Note center>The hub keeps the stream on your home network and hands it to your viewers.</Note>
     </FlowPage>
   );
@@ -132,17 +204,40 @@ const countLabel = (n) => `Add ${n} camera${n === 1 ? '' : 's'}`;
 
 /** USB webcams plugged into the hub. */
 export function ConnectUsb() {
-  const [picked, toggle] = usePicked(usbCams);
+  const hub = useStore().hub;
+  const [found, setFound] = React.useState(null); // null while asking the hub
+  const [problem, setProblem] = React.useState('');
+  const [picked, setPicked] = React.useState([]);
+  const [adding, add] = useHubAdd();
+  const toggle = (id) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+
+  React.useEffect(() => {
+    if (!hub) return;
+    hubGet(hub, '/api/usb')
+      .then((j) => setFound(j.cameras.filter((c) => !c.added).map((c) => ({ id: c.address, t: c.name, s: c.port ? `USB port ${c.port}` : c.address }))))
+      .catch((err) => {
+        setFound([]);
+        setProblem(err.message);
+      });
+  }, [hub]);
+
   return (
-    <FlowPage title="Add a USB webcam" intro="Webcams plugged into your home server or NAS show up here. The hub turns them into Lookabout streams.">
+    <FlowPage title="Add a USB webcam" intro="Webcams plugged into the machine your hub runs on show up here. The hub turns them into Lookabout streams.">
       <Eyebrow style={{ paddingTop: 6 }}>FOUND ON YOUR HUB</Eyebrow>
-      <PickList items={usbCams} picked={picked} onToggle={toggle} />
+      {found && found.length ? <PickList items={found} picked={picked} onToggle={toggle} /> : null}
+      {found && !found.length ? (
+        <Note size={13}>
+          {problem || 'No webcams to add. Plug one into the hub, list it under “devices” in the hub’s docker-compose.yml, and restart the hub.'}
+        </Note>
+      ) : null}
+      {!found ? <Note size={13}>Asking the hub…</Note> : null}
+      {adding.error ? <Note size={13} style={{ color: 'var(--osl-danger)' }}>{adding.error}</Note> : null}
       <Spacer />
       <Cta
-        disabled={!picked.length}
-        onClick={() => finish(usbCams.filter((c) => picked.includes(c.id)).map((c) => ({ name: c.t, device: 'USB CAM', source: 'USB webcam on hub' })))}
+        disabled={!picked.length || adding.busy}
+        onClick={() => add(found.filter((c) => picked.includes(c.id)).map((c) => ({ kind: 'usb', address: c.id, name: c.t.slice(0, 24) })))}
       >
-        {countLabel(picked.length)}
+        {adding.busy ? 'Adding…' : countLabel(picked.length)}
       </Cta>
     </FlowPage>
   );
@@ -279,15 +374,25 @@ function normalizeAddress(value) {
 }
 
 /**
- * ESP32 camera on your own Wi-Fi. Until the hub exists, the viewer can show
- * the board's stream directly when both are on the same network.
+ * ESP32 or Pi camera on your own Wi-Fi. With a hub paired the hub reads the
+ * board and viewers watch through the hub; without one the viewer shows the
+ * board's stream directly when both are on the same network.
  */
 function DirectCamera({ defaultAddress, defaultName, device, source, hint }) {
+  const viaHub = useStore().hubPaired;
   const [address, setAddress] = React.useState(defaultAddress);
   const [name, setName] = React.useState(defaultName);
   const base = normalizeAddress(address);
   const [preview, setPreview] = React.useState('');
-  const insecure = window.location.protocol === 'https:' && base.startsWith('http://');
+  const [test, runTest] = useHubTest();
+  const [adding, add] = useHubAdd();
+  const insecure = !viaHub && window.location.protocol === 'https:' && base.startsWith('http://');
+  const hubCamera = { kind: 'mjpeg', address: base, name: name.trim(), device, source: source.replace('on your Wi-Fi', 'via hub') };
+  const error = insecure
+    ? 'This page is on https, so the browser will block a plain http camera. Open Lookabout from your own network instead.'
+    : viaHub && test.status === 'failed'
+      ? test.error
+      : undefined;
   return (
     <>
       <Field
@@ -297,33 +402,195 @@ function DirectCamera({ defaultAddress, defaultName, device, source, hint }) {
         value={address}
         onChange={(e) => setAddress(e.target.value)}
         hint={hint}
-        error={insecure ? 'This page is on https, so the browser will block a plain http camera. Open Lookabout from your own network instead.' : undefined}
+        error={error}
       />
-      <VideoTile label="Test preview from the camera" height={180} placeholder="TEST PREVIEW" src={preview || undefined} />
-      <Cta variant="outline" disabled={!base} onClick={() => setPreview(`${base}/stream?t=${Date.now()}`)}>Test the stream</Cta>
-      <Field label="Name" value={name} maxLength={24} onChange={(e) => setName(e.target.value)} />
+      {viaHub ? <TestPreview test={test} /> : <VideoTile label="Test preview from the camera" height={180} placeholder="TEST PREVIEW" src={preview || undefined} />}
+      <Cta
+        variant="outline"
+        disabled={!base || test.status === 'busy'}
+        onClick={() => (viaHub ? runTest(hubCamera) : setPreview(`${base}/stream?t=${Date.now()}`))}
+      >
+        {test.status === 'busy' ? 'Connecting…' : 'Test the stream'}
+      </Cta>
+      <Field label="Name" value={name} maxLength={24} onChange={(e) => setName(e.target.value)} error={adding.error || undefined} />
       <Spacer />
       <Cta
-        disabled={!base || !name.trim()}
-        onClick={() => finish([{ name: name.trim(), device, source, streamUrl: `${base}/stream`, address: base }])}
+        disabled={!base || !name.trim() || adding.busy}
+        onClick={() => (viaHub ? add([hubCamera]) : finish([{ name: name.trim(), device, source, streamUrl: `${base}/stream`, address: base }]))}
       >
-        Add this camera
+        {adding.busy ? 'Adding…' : viaHub ? 'Add through the hub' : 'Add this camera'}
       </Cta>
+      {viaHub ? <Note center>The hub reads this camera and hands the video to your viewers.</Note> : null}
     </>
   );
 }
 
-/** Guided setup: home hub, Raspberry Pi camera, ESP32 camera. */
-export function Guided({ kind }) {
-  const f = guidedFlows[kind];
-  const done = () => {
-    if (kind === 'hub') {
-      setState({ hubPaired: true });
+const codeBox = {
+  padding: '12px 14px',
+  borderRadius: 'var(--radius-md)',
+  background: 'var(--surface-sunken)',
+  border: '1px solid var(--border)',
+  ...mono(12),
+  letterSpacing: 0,
+  lineHeight: 1.6,
+  color: 'var(--text-body)',
+  whiteSpace: 'pre-line',
+  overflowX: 'auto',
+};
+
+function thisDeviceName() {
+  const ua = navigator.userAgent;
+  const what = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Mac/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows PC' : 'Computer';
+  return `${what} browser`;
+}
+
+const freeSpace = (bytes) => (bytes >= 1e12 ? `${(bytes / 1e12).toFixed(1)} TB free` : `${Math.round(bytes / 1e9)} GB free`);
+
+/** The paired hub: what it is, and unpairing. */
+function HubPaired() {
+  const s = useStore();
+  const [info, setInfo] = React.useState(null);
+  const [busy, setBusy] = React.useState(false);
+  React.useEffect(() => {
+    hubInfo(s.hub.address).then(setInfo).catch(() => setInfo(null));
+  }, [s.hub.address, s.hubReachable]);
+  return (
+    <FlowPage title="Home hub" eyebrow="HOME HUB" intro="This device is paired with your hub. Cameras, events and paired viewers come from it.">
+      {s.hubReachable ? (
+        <StatusBox label="PAIRED">
+          {s.hub.name}{info ? ` · ${freeSpace(info.free_bytes)} · version ${info.version}` : ''}
+        </StatusBox>
+      ) : (
+        <Note size={13} style={{ color: 'var(--osl-danger)' }}>
+          Can’t reach the hub right now. Check that it is switched on and that this device is on your home network.
+        </Note>
+      )}
+      <Group>
+        <Row><RowText title="Address" sub={s.hub.address} /></Row>
+        <Row to="/cameras"><RowText title="Cameras" sub={`${s.hubCameras.length} on this hub`} /><span style={{ fontSize: 14, color: 'var(--text-muted)' }}>Open</span></Row>
+        <Row to="/devices"><RowText title="Paired viewers" sub={`${s.hubViewers.length} hold a key`} /><span style={{ fontSize: 14, color: 'var(--text-muted)' }}>Manage</span></Row>
+      </Group>
+      <Spacer />
+      <Cta href="#/add">Add a camera</Cta>
+      <Cta
+        variant="outline"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          await unpairHub();
+        }}
+      >
+        {busy ? 'Unpairing…' : 'Unpair this device'}
+      </Cta>
+      <Note center>Unpairing deletes this device’s key on the hub. The hub keeps its cameras and other viewers.</Note>
+    </FlowPage>
+  );
+}
+
+/**
+ * Home hub: install it, find it by address, pair with the code from its page.
+ * `address` and `code` can come in the link (`#/add/hub?address=…&code=…`).
+ */
+export function HubSetup({ address: linkAddress, code: linkCode }) {
+  const s = useStore();
+  const [address, setAddress] = React.useState(linkAddress || 'raspberrypi.local:8787');
+  const [code, setCode] = React.useState(linkCode || '');
+  const [name, setName] = React.useState(thisDeviceName);
+  const [found, setFound] = React.useState(null); // the hub's own description once it answers
+  const [problem, setProblem] = React.useState({});
+  const [busy, setBusy] = React.useState('');
+  const base = normalizeHubAddress(address);
+  const insecure = window.location.protocol === 'https:' && base.startsWith('http://');
+
+  if (s.hubPaired) return <HubPaired />;
+
+  const find = async () => {
+    setBusy('find');
+    setProblem({});
+    try {
+      setFound(await hubInfo(base));
+    } catch (err) {
+      setFound(null);
+      setProblem({ address: err.message });
+    }
+    setBusy('');
+  };
+  const pair = async () => {
+    setBusy('pair');
+    setProblem({});
+    try {
+      setHub(await pairWithHub(base, code, name.trim() || thisDeviceName()));
+      await refreshHub();
       navigate('/add');
-    } else if (f.camera) {
-      finish([f.camera]);
+    } catch (err) {
+      setProblem(err.status === 403 ? { code: err.message } : { address: err.message });
+      setBusy('');
     }
   };
+
+  return (
+    <FlowPage
+      title="Set up a home hub"
+      eyebrow="HOME HUB"
+      intro="Optional. Runs on a Raspberry Pi 4/5, home server or NAS. Brings in cameras you already own and keeps watch when your phone is away."
+    >
+      <Steps
+        items={[
+          'Copy the hub folder from the Lookabout repository to the machine and start it with Docker:',
+          'Open the hub’s page (its address, port 8787) and press “Show a pairing code”.',
+          'Enter the hub’s address and the code here.',
+        ]}
+      />
+      <div style={codeBox}>docker compose up -d --build</div>
+      <Field
+        label="Hub address"
+        monoFont
+        size={14}
+        value={address}
+        onChange={(e) => {
+          setAddress(e.target.value);
+          setFound(null);
+        }}
+        hint="The hub page shows this. Use the machine’s IP address if the .local name doesn’t open."
+        error={insecure ? 'This page is on https, so the browser will block a plain http hub. Open Lookabout over http on your own network instead.' : problem.address}
+        autoCapitalize="off"
+        spellCheck={false}
+      />
+      {found ? (
+        <StatusBox label="HUB FOUND ON YOUR NETWORK">{found.name} · {freeSpace(found.free_bytes)} · {found.cameras} camera{found.cameras === 1 ? '' : 's'}</StatusBox>
+      ) : (
+        <Cta variant="outline" disabled={!base || busy === 'find'} onClick={find}>{busy === 'find' ? 'Looking…' : 'Find the hub'}</Cta>
+      )}
+      <Field
+        label="Pairing code from the hub page"
+        monoFont
+        size={18}
+        emphasis
+        placeholder="XXXX-XXXX"
+        value={code}
+        maxLength={12}
+        onChange={(e) => {
+          setCode(e.target.value.toUpperCase());
+          setProblem({});
+        }}
+        error={problem.code}
+        autoCapitalize="characters"
+        autoComplete="off"
+        spellCheck={false}
+      />
+      <Field label="Name for this device" value={name} maxLength={24} onChange={(e) => setName(e.target.value)} hint="Shown under Paired devices, so you can tell viewers apart." />
+      <Spacer />
+      <Cta disabled={!base || code.replace(/[^A-Za-z0-9]/g, '').length < 8 || busy === 'pair'} onClick={pair}>
+        {busy === 'pair' ? 'Pairing…' : 'Pair this hub'}
+      </Cta>
+      <Note center>Without a hub everything still works live, phone to phone.</Note>
+    </FlowPage>
+  );
+}
+
+/** Guided setup: Raspberry Pi camera, ESP32 camera. */
+export function Guided({ kind }) {
+  const f = guidedFlows[kind];
   if (kind === 'esp32') {
     return (
       <FlowPage
@@ -371,31 +638,5 @@ export function Guided({ kind }) {
       </FlowPage>
     );
   }
-  return (
-    <FlowPage title={f.title} intro={f.intro}>
-      <Steps items={f.steps} />
-      {f.code ? (
-        <div
-          style={{
-            padding: '12px 14px',
-            borderRadius: 'var(--radius-md)',
-            background: 'var(--surface-sunken)',
-            border: '1px solid var(--border)',
-            ...mono(12),
-            letterSpacing: 0,
-            lineHeight: 1.6,
-            color: 'var(--text-body)',
-            whiteSpace: 'pre-line',
-            overflowX: 'auto',
-          }}
-        >
-          {f.code}
-        </div>
-      ) : null}
-      <StatusBox label={f.statusLabel} progress={f.progress}>{f.status}</StatusBox>
-      <Spacer />
-      <Cta onClick={done}>{f.cta}</Cta>
-      <Note center>{f.foot}</Note>
-    </FlowPage>
-  );
+  return null;
 }

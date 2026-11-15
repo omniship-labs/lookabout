@@ -365,7 +365,15 @@ function SoloLive({ cam, inRoom, scenario }) {
   const clock = useClock();
   const [tileRef, toggleFullscreen] = useFullscreen();
   const reconnecting = scenario === 'reconnecting';
-  const events = scenario === 'empty' ? [] : tonight.slice(1);
+  const s = useStore();
+  // A camera on the home hub: video and what the hub recorded about it. No
+  // sound level, talk-back, lullaby or night light, which need a phone camera.
+  const onHub = !!cam.hub;
+  const startOfToday = new Date().setHours(0, 0, 0, 0);
+  const hubEvents = s.hubEvents
+    .filter((e) => e.camId === cam.id && e.startedMs >= startOfToday)
+    .map((e) => ({ time: e.time, tone: e.kind === 'offline' ? 'muted' : 'warning', label: e.t.split(' · ')[0], meta: e.m }));
+  const events = onHub ? hubEvents : scenario === 'empty' ? [] : tonight.slice(1);
   const section = { margin: '0 var(--lk-side)' };
 
   return (
@@ -378,7 +386,7 @@ function SoloLive({ cam, inRoom, scenario }) {
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, ...mono(12), color: 'var(--text-muted)' }}>
           <span style={{ width: 8, height: 8, borderRadius: 'var(--radius-pill)', background: reconnecting ? 'var(--osl-warning)' : 'var(--osl-success)' }} />
-          {reconnecting ? 'RECONNECTING' : `${connection.kind} · ${connection.latency}`}
+          {reconnecting ? 'RECONNECTING' : onHub ? 'VIA HUB' : `${connection.kind} · ${connection.latency}`}
         </div>
       </div>
 
@@ -387,6 +395,7 @@ function SoloLive({ cam, inRoom, scenario }) {
           ref={tileRef}
           label={reconnecting ? 'Frozen last frame while reconnecting' : `Live video from ${cam.name}`}
           src={cam.streamUrl}
+          cam={cam}
         >
           {reconnecting ? (
             <div
@@ -408,7 +417,7 @@ function SoloLive({ cam, inRoom, scenario }) {
           ) : (
             <>
               <Pill tone="scrim" style={{ position: 'absolute', top: 12, left: 12 }}>LIVE · {clock.toUpperCase()}</Pill>
-              <Pill tone="scrim" style={{ position: 'absolute', top: 12, right: 12 }}>LOW-LIGHT</Pill>
+              {onHub ? null : <Pill tone="scrim" style={{ position: 'absolute', top: 12, right: 12 }}>LOW-LIGHT</Pill>}
               <button type="button" aria-label="Full screen" onClick={toggleFullscreen} style={scrimButton}>
                 <FullscreenIcon size={18} />
               </button>
@@ -430,6 +439,10 @@ function SoloLive({ cam, inRoom, scenario }) {
             <Cta variant="outline" style={{ fontSize: 14 }}>Connection help</Cta>
           </div>
         </>
+      ) : onHub ? (
+        <div style={{ ...section, marginTop: 14, display: 'grid' }}>
+          <SnapshotButton cam={cam} height={52} />
+        </div>
       ) : (
         <>
           {controls.lullaby ? (
@@ -457,8 +470,8 @@ function SoloLive({ cam, inRoom, scenario }) {
       )}
 
       <div style={{ ...section, marginTop: 18, marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <Eyebrow style={{ paddingBottom: 6 }}>TONIGHT</Eyebrow>
-        <Tonight events={events} />
+        <Eyebrow style={{ paddingBottom: 6 }}>{onHub ? 'TODAY' : 'TONIGHT'}</Eyebrow>
+        {onHub && !events.length ? <Note size={13}>Nothing from this camera today.</Note> : <Tonight events={events} />}
       </div>
     </>
   );

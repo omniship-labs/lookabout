@@ -1,6 +1,6 @@
 import React from 'react';
 import { ProjectByline } from '@omniship-labs/design-beacon/ProjectByline';
-import { setState, useStore } from '../lib/store.js';
+import { setState, updateCamera, updateViewer, useStore } from '../lib/store.js';
 import { BackBar, Chip, Eyebrow, Group, Note, Page, Row, RowText, Segmented, Spacer, Switch, display } from '../components/ui.jsx';
 import { Shell } from '../components/viewer.jsx';
 
@@ -77,7 +77,7 @@ export function Settings() {
         </Section>
 
         <Section label="RECORDING">
-          <Value title="Home hub" sub="Live view works without it" value={s.hubPaired ? 'Connected' : 'Set up'} to="/add/hub" />
+          <Value title="Home hub" sub="Live view works without it" value={!s.hubPaired ? 'Set up' : s.hubReachable ? 'Connected' : 'Not reachable'} to="/add/hub" />
           <Value
             title="Keep clips for"
             sub="Oldest clips delete first"
@@ -146,20 +146,8 @@ function DeviceRow({ item, onRemove, onRename }) {
 /** Paired devices: cameras and viewers that hold a key. */
 export function Devices() {
   const s = useStore();
-  const update = (group, id, change) => {
-    const list = s.devices[group];
-    const next = change ? list.map((d) => (d.id === id ? { ...d, ...change } : d)) : list.filter((d) => d.id !== id);
-    const patch = { devices: { ...s.devices, [group]: next } };
-    if (group === 'cameras') {
-      patch.cameras = change
-        ? s.cameras.map((c) => (c.id === id ? { ...c, name: change.t } : c))
-        : s.cameras.filter((c) => c.id !== id);
-      patch.direct = change
-        ? s.direct.map((c) => (c.id === id ? { ...c, name: change.t } : c))
-        : s.direct.filter((c) => c.id !== id);
-    }
-    setState(patch);
-  };
+  // Rename (a name) or remove (null). With a hub paired this happens on the hub.
+  const update = (group, id, name) => (group === 'cameras' ? updateCamera(id, name) : updateViewer(id, name));
   const groups = [
     { key: 'cameras', label: 'CAMERAS' },
     { key: 'viewers', label: 'VIEWERS' },
@@ -171,18 +159,25 @@ export function Devices() {
         <React.Fragment key={g.key}>
           <Eyebrow style={{ paddingTop: 4 }}>{g.label}</Eyebrow>
           <Group>
+            {!s.devices[g.key].length ? (
+              <Row><RowText title={g.key === 'cameras' ? 'No cameras yet' : 'No viewers yet'} muted /></Row>
+            ) : null}
             {s.devices[g.key].map((item) => (
               <DeviceRow
                 key={item.id}
                 item={item}
                 onRemove={() => update(g.key, item.id, null)}
-                onRename={(t) => update(g.key, item.id, { t })}
+                onRename={(t) => update(g.key, item.id, t)}
               />
             ))}
           </Group>
         </React.Fragment>
       ))}
-      <Note>Removing a viewer deletes its key on every camera. It can’t watch again without a new pairing.</Note>
+      <Note>
+        {s.hubPaired
+          ? 'Removing a viewer deletes its key on the hub. It can’t watch again without a new pairing code.'
+          : 'Removing a viewer deletes its key on every camera. It can’t watch again without a new pairing.'}
+      </Note>
     </Page>
   );
 }

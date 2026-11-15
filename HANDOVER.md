@@ -1,6 +1,6 @@
 # Lookabout — handover
 
-Written 13 Nov 2026, updated 14 Nov 2026 (accounts plan added: section G). Read the root `README.md` first for layout and commands;
+Written 13 Nov 2026, updated 14 Nov 2026 (home hub built: section B; accounts plan added: section G). Read the root `README.md` first for layout and commands;
 each of `firmware/esp32`, `firmware/rpi`, `ios`, `android` has its own README.
 
 ## Where things stand
@@ -12,16 +12,19 @@ each of `firmware/esp32`, `firmware/rpi`, `ios`, `android` has its own README.
 | Raspberry Pi camera node | `firmware/rpi/` | Server tested with a stand-in video source. **Never run on a Pi.** |
 | Android app | `android/` | Builds. Start, viewer tabs and live video from a test stream checked on an emulator. |
 | iOS app | `ios/` | Sources type-check. **Never built or run** (no iOS simulator runtime on this Mac). |
-| Home hub | — | **Does not exist.** |
+| Home hub | `hub/` | Service, pairing, camera bridge and viewer API work against a stand-in camera with the web viewer. **Never run on a Pi or as a container.** No recording or detection yet. |
 
 What is real: the camera role on each platform (device camera, dim, pause),
 themes, settings, cameras added by address (ESP32 / Pi stream shows in the
 web and Android viewers), firmware packaging, Wi-Fi firmware update from the
-web page (tested against a stand-in board).
+web page (tested against a stand-in board), and on web the home hub: pairing,
+hub cameras (WebRTC live view, snapshot), offline events, paired viewers.
 
-What is sample data: the nursery room, house cameras, events, clips, sound
-levels (`src/lib/sampleData.js`, `SampleData` in the apps). Pairing,
-phone-to-phone streaming and the hub flows are screens only.
+What is sample data: the nursery room and sound levels; on web the house
+cameras and events too while no hub is paired; all of it in the Android and
+iOS apps (`src/lib/sampleData.js`, `SampleData` in the apps). Phone-to-phone
+pairing and streaming, clips, and the Nest / Ring / Wyze / Tesla flows are
+screens only.
 
 ## Decisions already made (don't reopen without the owner)
 
@@ -33,6 +36,7 @@ phone-to-phone streaming and the hub flows are screens only.
 - Cry and motion detection should run **on the hub** as the main path;
   on-device detection only for a phone used as a camera with no hub.
 - The hub runs as a **Docker container on the owner's Raspberry Pi**.
+- The hub is written in **Python**, with go2rtc beside it for video (B9).
 - Sibling repos (`../murmur`, `../envdock`, `../home`) are the convention
   reference. Web UI uses `@omniship-labs/design-beacon` tokens, never raw hex.
 - **Accounts and access (decided 14 Nov 2026, plan only, nothing built):** the
@@ -72,27 +76,38 @@ Ordered by what unblocks the most. Each task says what "done" means.
 
 ### B. Home hub in Docker on the Pi (the owner's next priority)
 
-Nothing is built. Suggested shape, to be confirmed while building:
+B1–B4 are built in `hub/` (see its README for the routes and how to run
+it) and wired into the web app. Everything was tested against a stand-in
+MJPEG camera on one machine; nothing has met a Pi, a container runtime, a
+real RTSP camera or a USB webcam yet.
 
-- [ ] **B1. Hub service skeleton.** New `hub/` folder: a small service plus
-      a `Dockerfile` and `docker-compose.yml` for arm64, host networking
-      (needed for mDNS and LAN cameras), a volume for config and recordings.
-      Done: `docker compose up` on the Pi serves a status page and advertises
-      `_lookabout-hub._tcp`.
-- [ ] **B2. Camera bridge.** Run go2rtc (MIT) inside the container; the hub
-      registers cameras with it (ESP32 / Pi MJPEG, RTSP, USB webcams on the
-      Pi) and hands viewers a WebRTC stream. Done: an ESP32 camera plays in
-      the web viewer through the hub instead of by direct address.
-- [ ] **B3. Hub pairing.** The hub shows a pairing code (and QR) on its
-      page; a viewer scans or types it, they exchange keys, and the hub
-      stores the viewer. Replace the sample flow in `#/add/hub`
-      (`Guided` in `src/screens/Add.jsx`) and `hubPaired` in
-      `src/lib/store.js`. Done: pairing survives a restart on both sides;
-      removing a viewer in Paired devices revokes it on the hub.
-- [ ] **B4. Hub API for viewers.** Cameras list, status, events, clips,
-      authenticated with the pairing key. Replace `sampleData` reads in the
-      Cameras and Events screens (web first). Done: the viewer shows the
-      hub's real cameras and no sample ones when a hub is paired.
+- [ ] **B1. Hub service skeleton.** `hub/`: Python service, `Dockerfile`
+      (builds go2rtc from source), `docker-compose.yml` with host networking
+      and a `hub-data` volume. Serves a status page on port 8787 and
+      announces `_lookabout-hub._tcp`. **Left:** `docker compose up -d
+      --build` on the Pi. The full image has never been built (the session
+      that wrote it could not reach Debian's package mirror; the go2rtc
+      stage built). Check the mDNS announcement from another device.
+- [x] **B2. Camera bridge.** The hub runs go2rtc and registers ESP32 / Pi
+      (MJPEG), RTSP and USB cameras with it; viewers get WebRTC, with MJPEG
+      as the fallback and for small tiles of MJPEG cameras. Seen working: a
+      stand-in board added through the hub plays in the web viewer.
+      **Left:** try a real RTSP camera (sound included: the Opus path is
+      untested) and a USB webcam (the hub asks for MJPEG at 1280×720, which
+      not every webcam has; see `stream_url` in `hub/lookabout_hub/cameras.py`).
+- [x] **B3. Hub pairing.** The hub page makes a one-time code (5 minutes,
+      with a QR of `lookabout://hub?address=…&code=…` for the native apps
+      to scan later); the web viewer sends it and gets a key. The hub keeps
+      a hash, the viewer keeps the key in its settings. Removing a viewer
+      under Paired devices deletes the key on the hub, and that viewer
+      drops back to unpaired on its next request. `#/add/hub` is the real
+      flow (`HubSetup` in `src/screens/Add.jsx`); the link form
+      `#/add/hub?address=…&code=…` prefills it.
+- [x] **B4. Hub API for viewers.** Cameras, status, events, viewers, all
+      behind the pairing key (`src/lib/hub.js`, `src/lib/store.js`). With a
+      hub paired the web Cameras, live, Events and Paired devices screens
+      show the hub's data and no sample cameras. Events are "offline" only
+      until B6/B7; clips need B5.
 - [ ] **B5. Recording and clips.** Continuous recording with retention
       ("Keep clips for"), clip export for events. Done: Events list and clip
       player play real clips.
@@ -105,8 +120,11 @@ Nothing is built. Suggested shape, to be confirmed while building:
       mic or a phone camera. Done: a played cry recording raises an event.
 - [ ] **B8. Alerts.** Push to paired viewers (APNs / FCM) for cry, motion,
       camera offline. Needs developer accounts (see D).
-- [ ] **B9. Decide the hub's language/runtime** before B1. Python matches
-      `firmware/rpi`; Go matches go2rtc. Owner's call.
+- [x] **B9. Hub language: Python** (owner's decision, 14 Nov 2026).
+- [ ] **B10. Hub in the Android and iOS apps.** Pairing (scan the hub
+      page's QR), hub cameras over WebRTC, events. Web only so far.
+- [ ] **B11. Sound from hub cameras in the viewer.** Hub video plays muted;
+      there is no listen control for a hub camera yet.
 
 ### C. Phone-to-phone (no hub) path
 
@@ -142,11 +160,13 @@ Nothing is built. Suggested shape, to be confirmed while building:
 
 - [ ] **E1. Unwired buttons**: clip Save / Share / Delete,
       "Sign in with Google", Status page, Try again / Connection help.
-      Snapshot is wired for cameras added by address (`src/lib/snapshot.js`
-      downloads the board's `/snapshot.jpg`); hub cameras say "No video yet"
-      until the hub can hand over a frame (B4).
-- [ ] **E2. Hub-dependent add flows** (USB on hub, RTSP, Eufy, Nest, Ring,
-      Wyze, Tesla) are forms that add a sample camera. Wire to the hub (B).
+      Snapshot is wired for cameras added by address and for hub cameras
+      (`src/lib/snapshot.js`).
+- [ ] **E2. Hub-dependent add flows.** USB on hub, RTSP and Eufy now add
+      real cameras to the hub, and ESP32 / Pi cameras go through the hub
+      when one is paired. Nest, Ring, Wyze and Tesla are still sample
+      screens (greyed out as "Not in the hub yet" once a hub is paired);
+      each needs its own integration in the hub.
 - [ ] **E3. Deploy**: `.github/workflows/deploy.yml` builds on a push to
       `main` and publishes `dist` to GitHub Pages; the build uses a relative
       base so it works under `/lookabout/`. It was written here, not copied
@@ -158,6 +178,8 @@ Nothing is built. Suggested shape, to be confirmed while building:
 - [ ] **E4. https vs plain-http boards**: a deployed https page can't show
       `http://` board streams or send them updates. Goes away once streams
       come through the hub; until then document "open over http on your LAN".
+      The hub itself is plain http too, so the same applies to pairing with
+      it: the hub needs https (or the hub serving the web app) to fix this.
 - [ ] **E5. Design-system gaps**: Switch, Badge, Card, Input are local in
       `src/components/ui.jsx` because design-beacon 0.1.0 doesn't export
       them. Promote upstream or keep local.
@@ -174,11 +196,9 @@ Nothing is built. Suggested shape, to be confirmed while building:
 - [ ] **E8. Snapshot on a real board.** Tested only against a stand-in
       camera. After A3, press Snapshot while the stream is playing. Done: a
       JPEG of the current frame downloads from an ESP32 and from a Pi.
-- [ ] **E9. Snapshot for hub cameras.** They show "No video yet". Once the
-      hub API exists (B4), fetch the frame from the hub in
-      `src/lib/snapshot.js`. The button itself is now on every layout: the
-      tablet and desktop live screens have it under Hold to talk / Lullaby,
-      for the main view.
+- [x] **E9. Snapshot for hub cameras.** The frame comes from the hub
+      (`/api/cameras/<id>/snapshot.jpg`). Seen working with the stand-in
+      camera.
 
 ### G. Accounts, hub install and remote access (planned, not started)
 
@@ -197,7 +217,8 @@ Goal: "I don't want everyone to see everything." Decisions so far:
   forwarding is docs only.
 - Hub install in v1: **Docker compose generator plus an `install.sh`**; an SD
   card image is later. Apple sign-in is **in v1** alongside Google.
-- Hub runtime (B9) is **still open**; keep the API contract language-neutral.
+- Hub runtime (B9) is **Python** (decided 14 Nov 2026, built in `hub/`); keep
+  the API contract language-neutral.
 - Hub-to-internet checks in wizards are allowed, but each check names the host
   it contacts and sends only what it needs, shown before it runs.
 
@@ -293,18 +314,25 @@ G7 to G10 need the hub and G1. Building anything in the web app needs
 - [ ] **F3.** Android allows cleartext traffic app-wide for LAN boards;
       narrow it once streams go through the hub.
 - [ ] **F4.** Signed firmware images / rollback protection for updates.
+- [ ] **F5.** The hub is plain http: anyone on the LAN can open its page
+      and pair a viewer, and keys and video requests travel unencrypted
+      (the key is in the address of MJPEG streams). Camera passwords sit
+      unencrypted in the hub's data volume. Needs https on the hub and a
+      way to approve pairing.
 
 ## What to pick up next
 
-Everything left needs hardware, an owner decision or an account:
+In order:
 
-1. Switch GitHub Pages on, then re-run the Deploy workflow (finishes E3).
-2. Decide the hub's language (B9), which unblocks B1 onwards and with it the
-   remaining unwired buttons (E1), hub add flows (E2) and hub snapshots (E9).
-3. Flash a real ESP32-S3 (A1–A7), then Snapshot on a real board (E8).
-4. Add `NODE_AUTH_TOKEN` to the Claude cloud environment (E7).
-5. Accounts and camera gating (section G). Start with G1 (contract doc) and G2
-   (wizard component); neither needs the hub or a runtime decision.
+1. Run the hub on the Pi (B1) and point it at real cameras (B2).
+2. Recording, motion and cry detection on the hub (B5–B7), which also
+   unblock the clip buttons (E1).
+3. Switch GitHub Pages on, then re-run the Deploy workflow (finishes E3).
+4. Flash a real ESP32-S3 (A1–A7), then Snapshot on a real board (E8).
+5. Add `NODE_AUTH_TOKEN` to the Claude cloud environment (E7).
+6. Accounts and camera gating (section G). Start with G1 (contract doc) and G2
+   (wizard component). The hub's present pairing keys (B3) are what G replaces
+   with accounts.
 
 ## How to run each piece
 
@@ -316,6 +344,10 @@ npm run dev
 # ESP32 firmware, then package it for the web page and both apps
 cd firmware/esp32 && pio run -e esp32-s3-uvc && cd ../..
 npm run firmware:package
+
+# Home hub (on the Pi; then open http://<pi>:8787)
+cd hub && docker compose up -d --build
+python3 -m unittest discover -s hub/tests     # hub tests, anywhere
 
 # Pi camera node (on the Pi)
 cd firmware/rpi && ./install.sh

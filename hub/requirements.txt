@@ -1,0 +1,2 @@
+zeroconf>=0.132,<1   # announces the hub on the network
+segno>=1.6,<2        # QR code on the pairing page
