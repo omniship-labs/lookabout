@@ -2,9 +2,11 @@ import React from 'react';
 import { navigate } from '../lib/router.js';
 import { addCameras, addHubCamera, getState, refreshHub, setHub, unpairHub, useStore } from '../lib/store.js';
 import { hubGet, hubInfo, hubTestCamera, normalizeHubAddress, pairWithHub } from '../lib/hub.js';
+import { blockedByHttps, codeReady, findHub, freeSpace, typedAddress } from '../lib/hubPairing.js';
 import { addGroups, connectKinds, guidedFlows, nestCams, ringCams, teslaClips, wyzeCams } from '../lib/sampleData.js';
 import { BackBar, CheckMark, Cta, Eyebrow, Field, Group, Note, Page, Pill, Row, RowText, Spacer, StatusBox, Steps, display, mono } from '../components/ui.jsx';
 import { ClipRow, VideoTile } from '../components/viewer.jsx';
+import { Wizard } from '../components/Wizard.jsx';
 
 const tags = {
   live: { tone: 'success', label: 'LIVE' },
@@ -425,26 +427,11 @@ function DirectCamera({ defaultAddress, defaultName, device, source, hint }) {
   );
 }
 
-const codeBox = {
-  padding: '12px 14px',
-  borderRadius: 'var(--radius-md)',
-  background: 'var(--surface-sunken)',
-  border: '1px solid var(--border)',
-  ...mono(12),
-  letterSpacing: 0,
-  lineHeight: 1.6,
-  color: 'var(--text-body)',
-  whiteSpace: 'pre-line',
-  overflowX: 'auto',
-};
-
 function thisDeviceName() {
   const ua = navigator.userAgent;
   const what = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Mac/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows PC' : 'Computer';
   return `${what} browser`;
 }
-
-const freeSpace = (bytes) => (bytes >= 1e12 ? `${(bytes / 1e12).toFixed(1)} TB free` : `${Math.round(bytes / 1e9)} GB free`);
 
 /** The paired hub: what it is, and unpairing. */
 function HubPaired() {
@@ -491,99 +478,107 @@ function HubPaired() {
  * Home hub: install it, find it by address, pair with the code from its page.
  * `address` and `code` can come in the link (`#/add/hub?address=…&code=…`).
  */
+const HUB_README = 'https://github.com/omniship-labs/lookabout/tree/main/hub#install-on-a-raspberry-pi';
+const PAIR_SECRET = ['code']; // the pairing code is never written to storage
+
+const pairSteps = [
+  {
+    id: 'start',
+    title: 'Start the hub',
+    guide: [
+      ['Copy the ', ['hub'], ' folder from the Lookabout repository to the Pi (64-bit Raspberry Pi OS with Docker).'],
+      'In that folder, start it. The first build takes several minutes on a Pi.',
+    ],
+    copy: [{ label: 'COMMAND', text: 'docker compose up -d --build' }],
+    links: [{ label: 'Hub install guide', href: HUB_README }],
+    confirmLabel: 'The hub is running',
+  },
+  {
+    id: 'find',
+    title: 'Find the hub',
+    body: ({ values, set }) => {
+      const base = normalizeHubAddress(typedAddress(values));
+      const insecure = blockedByHttps(base, window.location.protocol);
+      return (
+        <Field
+          label="Hub address"
+          monoFont
+          size={14}
+          value={typedAddress(values)}
+          onChange={(e) => set({ address: e.target.value })}
+          hint="The hub page shows this. Use the machine’s IP address if the .local name doesn’t open."
+          error={insecure ? 'This page is on https, so the browser will block a plain http hub. Open Lookabout over http on your own network instead.' : undefined}
+          autoCapitalize="off"
+          spellCheck={false}
+        />
+      );
+    },
+    ready: (values) => !!normalizeHubAddress(typedAddress(values)),
+    checkLabel: 'Find the hub',
+    checkingLabel: 'Looking…',
+    check: ({ values }) => findHub(values, window.location.protocol),
+  },
+  {
+    id: 'pair',
+    title: 'Pair this device',
+    guide: ['On the hub’s page, press “Show a pairing code”. The code lasts five minutes.', 'Type it here.'],
+    links: (values) => (values.base ? [{ label: 'Open the hub page', href: values.base }] : []),
+    body: ({ values, set }) => (
+      <>
+        <Field
+          label="Pairing code from the hub page"
+          monoFont
+          size={18}
+          emphasis
+          placeholder="XXXX-XXXX"
+          value={values.code || ''}
+          maxLength={12}
+          onChange={(e) => set({ code: e.target.value.toUpperCase() })}
+          autoCapitalize="characters"
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <Field
+          label="Name for this device"
+          value={values.name ?? thisDeviceName()}
+          maxLength={24}
+          onChange={(e) => set({ name: e.target.value })}
+          hint="Shown under Paired devices, so you can tell viewers apart."
+        />
+      </>
+    ),
+    ready: (values) => codeReady(values.code),
+    checkLabel: 'Pair this hub',
+    checkingLabel: 'Pairing…',
+    check: async ({ values }) => {
+      const name = (values.name ?? '').trim() || thisDeviceName();
+      setHub(await pairWithHub(values.base || normalizeHubAddress(typedAddress(values)), values.code, name));
+      await refreshHub();
+      return 'Paired.';
+    },
+    note: 'Without a hub everything still works live, phone to phone.',
+  },
+];
+
 export function HubSetup({ address: linkAddress, code: linkCode }) {
   const s = useStore();
-  const [address, setAddress] = React.useState(linkAddress || 'raspberrypi.local:8787');
-  const [code, setCode] = React.useState(linkCode || '');
-  const [name, setName] = React.useState(thisDeviceName);
-  const [found, setFound] = React.useState(null); // the hub's own description once it answers
-  const [problem, setProblem] = React.useState({});
-  const [busy, setBusy] = React.useState('');
-  const base = normalizeHubAddress(address);
-  const insecure = window.location.protocol === 'https:' && base.startsWith('http://');
-
   if (s.hubPaired) return <HubPaired />;
-
-  const find = async () => {
-    setBusy('find');
-    setProblem({});
-    try {
-      setFound(await hubInfo(base));
-    } catch (err) {
-      setFound(null);
-      setProblem({ address: err.message });
-    }
-    setBusy('');
-  };
-  const pair = async () => {
-    setBusy('pair');
-    setProblem({});
-    try {
-      setHub(await pairWithHub(base, code, name.trim() || thisDeviceName()));
-      await refreshHub();
-      navigate('/add');
-    } catch (err) {
-      setProblem(err.status === 403 ? { code: err.message } : { address: err.message });
-      setBusy('');
-    }
-  };
-
   return (
     <FlowPage
       title="Set up a home hub"
       eyebrow="HOME HUB"
       intro="Optional. Runs on a Raspberry Pi 4/5, home server or NAS. Brings in cameras you already own and keeps watch when your phone is away."
     >
-      <Steps
-        items={[
-          'Copy the hub folder from the Lookabout repository to the machine and start it with Docker:',
-          'Open the hub’s page (its address, port 8787) and press “Show a pairing code”.',
-          'Enter the hub’s address and the code here.',
-        ]}
+      <Wizard
+        flow="hub-pair"
+        steps={pairSteps}
+        secret={PAIR_SECRET}
+        // A link from the hub's QR (#/add/hub?address=…&code=…) fills the form in.
+        initialValues={{ address: linkAddress, code: linkCode }}
+        restart={!!linkAddress}
+        forgetWhenDone
+        onDone={() => navigate('/add')}
       />
-      <div style={codeBox}>docker compose up -d --build</div>
-      <Field
-        label="Hub address"
-        monoFont
-        size={14}
-        value={address}
-        onChange={(e) => {
-          setAddress(e.target.value);
-          setFound(null);
-        }}
-        hint="The hub page shows this. Use the machine’s IP address if the .local name doesn’t open."
-        error={insecure ? 'This page is on https, so the browser will block a plain http hub. Open Lookabout over http on your own network instead.' : problem.address}
-        autoCapitalize="off"
-        spellCheck={false}
-      />
-      {found ? (
-        <StatusBox label="HUB FOUND ON YOUR NETWORK">{found.name} · {freeSpace(found.free_bytes)} · {found.cameras} camera{found.cameras === 1 ? '' : 's'}</StatusBox>
-      ) : (
-        <Cta variant="outline" disabled={!base || busy === 'find'} onClick={find}>{busy === 'find' ? 'Looking…' : 'Find the hub'}</Cta>
-      )}
-      <Field
-        label="Pairing code from the hub page"
-        monoFont
-        size={18}
-        emphasis
-        placeholder="XXXX-XXXX"
-        value={code}
-        maxLength={12}
-        onChange={(e) => {
-          setCode(e.target.value.toUpperCase());
-          setProblem({});
-        }}
-        error={problem.code}
-        autoCapitalize="characters"
-        autoComplete="off"
-        spellCheck={false}
-      />
-      <Field label="Name for this device" value={name} maxLength={24} onChange={(e) => setName(e.target.value)} hint="Shown under Paired devices, so you can tell viewers apart." />
-      <Spacer />
-      <Cta disabled={!base || code.replace(/[^A-Za-z0-9]/g, '').length < 8 || busy === 'pair'} onClick={pair}>
-        {busy === 'pair' ? 'Pairing…' : 'Pair this hub'}
-      </Cta>
-      <Note center>Without a hub everything still works live, phone to phone.</Note>
     </FlowPage>
   );
 }

@@ -1,0 +1,10 @@
+# Coverage floor for the PR check. Raise fail_under when tests add coverage;
+# never lower it to get a change through. Run: python3 -m coverage run -m unittest discover -s tests && python3 -m coverage report
+[run]
+branch = True
+source = lookabout_hub
+
+[report]
+fail_under = 70
+show_missing = True
+skip_covered = False

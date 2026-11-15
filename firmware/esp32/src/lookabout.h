@@ -5,13 +5,16 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "freertos/FreeRTOS.h"
+#include "sdkconfig.h"
 
 #ifndef LOOKABOUT_FW_VERSION
 #define LOOKABOUT_FW_VERSION "dev"
 #endif
 
 // Largest JPEG frame we keep. 640x480 MJPEG frames are usually 20–60 KB.
-#if CONFIG_SPIRAM
+#if CONFIG_LOOKABOUT_EMULATOR
+#define LK_FRAME_MAX (16 * 1024) // the test picture is under 5 KB; the classic ESP32 has little heap
+#elif CONFIG_SPIRAM
 #define LK_FRAME_MAX (256 * 1024)
 #else
 #define LK_FRAME_MAX (96 * 1024)

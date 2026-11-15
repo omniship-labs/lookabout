@@ -1,0 +1,4 @@
+# Emulator build for tests (firmware/esp32/qemu/README.md). Applied on top of
+# sdkconfig.defaults. Never flash this onto a real board.
+CONFIG_LOOKABOUT_EMULATOR=y
+CONFIG_ETH_USE_OPENETH=y

@@ -48,6 +48,10 @@ If it can't join your Wi-Fi after a few tries, the setup network comes back.
 
 ## Status
 
-Compiles; not yet run on hardware. Video only (no microphone), up to 4
-viewers at once. The Wi-Fi update client in the web page is tested against
-a stand-in board; the board side of it, and USB flashing, are untested.
+Compiles (the PR check builds it for the ESP32-S3 with ESP-IDF 5.3); not yet
+run on hardware. Video only (no microphone), up to 4 viewers at once.
+
+The web interface, the saved settings and the over-Wi-Fi update are tested
+in the QEMU emulator on every pull request, with Ethernet instead of Wi-Fi and
+a test picture instead of the webcam: see [`qemu/`](qemu/). The Wi-Fi radio,
+the USB webcam and USB flashing still need a board.

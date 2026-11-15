@@ -1,4 +1,8 @@
 dependencies:
   idf: ">=5.3"
-  espressif/usb_host_uvc: "^2.3.0"
+  espressif/usb_host_uvc:
+    version: "^2.3.0"
+    # USB host only exists on these chips; the emulator tests build for the classic ESP32.
+    rules:
+      - if: "target in [esp32s2, esp32s3, esp32p4]"
   espressif/mdns: "^1.4.0"
