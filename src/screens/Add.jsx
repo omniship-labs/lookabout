@@ -1,7 +1,8 @@
 import React from 'react';
 import { navigate } from '../lib/router.js';
 import { addCameras, addHubCamera, getState, refreshHub, setHub, unpairHub, useStore } from '../lib/store.js';
-import { hubGet, hubInfo, hubTestCamera, normalizeHubAddress, pairWithHub } from '../lib/hub.js';
+import { hubGet, hubInfo, hubTestCamera, inviteFromLink, joinHub, normalizeHubAddress, pairWithHub, setUpHub, signInToHub } from '../lib/hub.js';
+import { passwordProblem } from '../lib/access.js';
 import { blockedByHttps, codeReady, findHub, freeSpace, typedAddress } from '../lib/hubPairing.js';
 import { addGroups, connectKinds, guidedFlows, nestCams, ringCams, teslaClips, wyzeCams } from '../lib/sampleData.js';
 import { BackBar, CheckMark, Cta, Eyebrow, Field, Group, Note, Page, Pill, Row, RowText, Spacer, StatusBox, Steps, display, mono } from '../components/ui.jsx';
@@ -442,10 +443,10 @@ function HubPaired() {
     hubInfo(s.hub.address).then(setInfo).catch(() => setInfo(null));
   }, [s.hub.address, s.hubReachable]);
   return (
-    <FlowPage title="Home hub" eyebrow="HOME HUB" intro="This device is paired with your hub. Cameras, events and paired viewers come from it.">
+    <FlowPage title="Home hub" eyebrow="HOME HUB" intro="This device is signed in to your hub. Cameras, events and devices come from it.">
       {s.hubReachable ? (
-        <StatusBox label="PAIRED">
-          {s.hub.name}{info ? ` · ${freeSpace(info.free_bytes)} · version ${info.version}` : ''}
+        <StatusBox label="SIGNED IN">
+          {s.hub.name}{s.hub.member ? ` · ${s.hub.member.name || s.hub.member.email}` : ''}{info ? ` · ${freeSpace(info.free_bytes)} · version ${info.version}` : ''}
         </StatusBox>
       ) : (
         <Note size={13} style={{ color: 'var(--osl-danger)' }}>
@@ -455,7 +456,7 @@ function HubPaired() {
       <Group>
         <Row><RowText title="Address" sub={s.hub.address} /></Row>
         <Row to="/cameras"><RowText title="Cameras" sub={`${s.hubCameras.length} on this hub`} /><span style={{ fontSize: 14, color: 'var(--text-muted)' }}>Open</span></Row>
-        <Row to="/devices"><RowText title="Paired viewers" sub={`${s.hubViewers.length} hold a key`} /><span style={{ fontSize: 14, color: 'var(--text-muted)' }}>Manage</span></Row>
+        <Row to="/devices"><RowText title="Signed-in devices" sub={`${s.hubViewers.length} signed in`} /><span style={{ fontSize: 14, color: 'var(--text-muted)' }}>Manage</span></Row>
       </Group>
       <Spacer />
       <Cta href="#/add">Add a camera</Cta>
@@ -467,9 +468,9 @@ function HubPaired() {
           await unpairHub();
         }}
       >
-        {busy ? 'Unpairing…' : 'Unpair this device'}
+        {busy ? 'Signing out…' : 'Sign out of this hub'}
       </Cta>
-      <Note center>Unpairing deletes this device’s key on the hub. The hub keeps its cameras and other viewers.</Note>
+      <Note center>Signing out ends this device’s session on the hub. The hub keeps its cameras and everyone else’s sign-ins.</Note>
     </FlowPage>
   );
 }
@@ -479,7 +480,7 @@ function HubPaired() {
  * `address` and `code` can come in the link (`#/add/hub?address=…&code=…`).
  */
 const HUB_README = 'https://github.com/omniship-labs/lookabout/tree/main/hub#install-on-a-raspberry-pi';
-const PAIR_SECRET = ['code']; // the pairing code is never written to storage
+const PAIR_SECRET = ['code', 'password', 'setupCode']; // codes and passwords are never written to storage
 
 const pairSteps = [
   {
@@ -520,41 +521,83 @@ const pairSteps = [
   },
   {
     id: 'pair',
-    title: 'Pair this device',
-    guide: ['On the hub’s page, press “Show a pairing code”. The code lasts five minutes.', 'Type it here.'],
+    title: 'Sign in to the hub',
+    // A new hub asks for its first admin; after that people sign in, or join with an invite link.
+    guide: (values) => (values.setup
+      ? ['This hub has no accounts yet. Make the first admin: the setup code is on the hub’s page, and in its log.']
+      : ['Sign in with your hub account. If someone invited you, paste the invite link and choose a password.']),
     links: (values) => (values.base ? [{ label: 'Open the hub page', href: values.base }] : []),
     body: ({ values, set }) => (
       <>
+        {values.setup ? (
+          <Field
+            label="Setup code"
+            monoFont
+            size={18}
+            emphasis
+            placeholder="XXXX-XXXX"
+            value={values.setupCode || ''}
+            maxLength={12}
+            onChange={(e) => set({ setupCode: e.target.value.toUpperCase() })}
+            autoCapitalize="characters"
+            autoComplete="off"
+            spellCheck={false}
+          />
+        ) : null}
+        {!values.setup && !values.code ? (
+          <Field
+            label="Invite link (only if you were invited)"
+            monoFont
+            size={13}
+            value={values.invite || ''}
+            onChange={(e) => set({ invite: e.target.value })}
+            autoCapitalize="off"
+            spellCheck={false}
+          />
+        ) : null}
+        {values.setup || values.invite ? (
+          <Field label="Your name" value={values.person || ''} maxLength={40} onChange={(e) => set({ person: e.target.value })} autoComplete="name" />
+        ) : null}
+        {!values.invite ? (
+          <Field label="Email" type="email" value={values.email || ''} onChange={(e) => set({ email: e.target.value })} autoCapitalize="off" autoComplete="email" spellCheck={false} />
+        ) : null}
         <Field
-          label="Pairing code from the hub page"
-          monoFont
-          size={18}
-          emphasis
-          placeholder="XXXX-XXXX"
-          value={values.code || ''}
-          maxLength={12}
-          onChange={(e) => set({ code: e.target.value.toUpperCase() })}
-          autoCapitalize="characters"
-          autoComplete="off"
-          spellCheck={false}
+          label={values.setup || values.invite ? 'Choose a password' : 'Password'}
+          type="password"
+          value={values.password || ''}
+          onChange={(e) => set({ password: e.target.value })}
+          autoComplete={values.setup || values.invite ? 'new-password' : 'current-password'}
+          hint={values.setup || values.invite ? 'At least 10 characters. Use 14 or more to be able to turn on remote access later.' : undefined}
+          error={(values.setup || values.invite) && values.password ? passwordProblem(values.password) || undefined : undefined}
         />
         <Field
           label="Name for this device"
           value={values.name ?? thisDeviceName()}
           maxLength={24}
           onChange={(e) => set({ name: e.target.value })}
-          hint="Shown under Paired devices, so you can tell viewers apart."
+          hint="Shown under Paired devices, so you can tell devices apart."
         />
       </>
     ),
-    ready: (values) => codeReady(values.code),
-    checkLabel: 'Pair this hub',
-    checkingLabel: 'Pairing…',
+    ready: (values) => {
+      if (values.code) return codeReady(values.code); // a pairing code from a link or QR
+      if (values.setup) return codeReady(values.setupCode) && !!(values.email || '').includes('@') && !passwordProblem(values.password);
+      if (values.invite) return !!inviteFromLink(values.invite) && !passwordProblem(values.password);
+      return !!(values.email || '').includes('@') && !!values.password;
+    },
+    checkLabel: (values) => (values.setup ? 'Make the first admin' : values.invite ? 'Join' : 'Sign in'),
+    checkingLabel: 'Signing in…',
     check: async ({ values }) => {
-      const name = (values.name ?? '').trim() || thisDeviceName();
-      setHub(await pairWithHub(values.base || normalizeHubAddress(typedAddress(values)), values.code, name));
+      const address = values.base || normalizeHubAddress(typedAddress(values));
+      const device = (values.name ?? '').trim() || thisDeviceName();
+      let hub;
+      if (values.code) hub = await pairWithHub(address, values.code, device);
+      else if (values.setup) hub = await setUpHub(address, { setupCode: values.setupCode, name: values.person, email: values.email, password: values.password }, device);
+      else if (values.invite) hub = await joinHub(address, inviteFromLink(values.invite) || values.invite.trim(), values.person, values.password, device);
+      else hub = await signInToHub(address, values.email, values.password, device);
+      setHub(hub);
       await refreshHub();
-      return 'Paired.';
+      return 'Signed in.';
     },
     note: 'Without a hub everything still works live, phone to phone.',
   },

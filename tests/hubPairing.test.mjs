@@ -61,12 +61,28 @@ test('free space reads in GB, or TB from a terabyte up', () => {
 test('Find the hub: asks /api/hub and sums up what answered', async () => {
   const asked = fakeHub(() => json(200, { name: 'Home hub', free_bytes: 112e9, cameras: 1 }));
   const out = await findHub({ address: 'hub.local' }, 'http:');
-  assert.equal(asked.length, 1);
-  assert.equal(asked[0].url, 'http://hub.local:8787/api/hub');
-  assert.equal(asked[0].init.headers.Authorization, undefined, 'no key is sent before pairing');
-  assert.deepEqual(out, { summary: 'Home hub at http://hub.local:8787 · 112 GB free · 1 camera', values: { base: 'http://hub.local:8787' } });
+  assert.deepEqual(asked.map((a) => a.url), ['http://hub.local:8787/api/hub', 'http://hub.local:8787/api/setup/state']);
+  assert.equal(asked[0].init.headers.Authorization, undefined, 'no session is sent before signing in');
+  assert.deepEqual(out, { summary: 'Home hub at http://hub.local:8787 · 112 GB free · 1 camera',
+    values: { base: 'http://hub.local:8787', setup: false, setupCode: '' } });
   fakeHub(() => json(200, { name: 'Shed', free_bytes: 2e12, cameras: 3 }));
   assert.equal((await findHub({}, 'http:')).summary, 'Shed at http://raspberrypi.local:8787 · 2.0 TB free · 3 cameras');
+});
+
+test('Find the hub: a new hub says it needs its first admin, and its setup code comes along', async () => {
+  fakeHub((url) => (url.endsWith('/api/hub')
+    ? json(200, { name: 'Home hub', free_bytes: 112e9, cameras: 0 })
+    : json(200, { setup_required: true, setup_code: 'K7QM-2XPA', devices: 0 })));
+  const out = await findHub({ address: 'hub.local' }, 'http:');
+  assert.equal(out.summary, 'Home hub at http://hub.local:8787 · 112 GB free · 0 cameras · needs its first admin');
+  assert.deepEqual(out.values, { base: 'http://hub.local:8787', setup: true, setupCode: 'K7QM-2XPA' });
+});
+
+test('Find the hub: a hub reached from outside gives only its name; an older hub has no setup state', async () => {
+  fakeHub((url) => (url.endsWith('/api/hub') ? json(200, { name: 'Home hub', version: '0.1.0' }) : json(404, { error: 'Not found.' })));
+  const out = await findHub({ address: 'hub.example.com' }, 'http:');
+  assert.equal(out.summary, 'Home hub at http://hub.example.com:8787');
+  assert.deepEqual(out.values, { base: 'http://hub.example.com:8787', setup: false, setupCode: '' });
 });
 
 test('Find the hub: fails with a reason the person can act on, without asking when it can’t work', async () => {

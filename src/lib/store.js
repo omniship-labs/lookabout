@@ -24,7 +24,7 @@ const settingDefaults = {
   keepDays: 14,
   e2e: true,
   direct: [], // cameras added by address on this network (e.g. an ESP32), kept across reloads
-  hub: null, // the paired home hub: { address, token, viewerId, id, name }
+  hub: null, // the signed-in home hub: { address, token, member, id, name }
 };
 
 function loadSettings() {
@@ -45,9 +45,11 @@ const session = {
 
 const hubCameraRow = (c) => ({ id: c.id, t: c.name, s: c.source || 'Via hub', a: 'Remove' });
 const directRow = (c) => ({ id: c.id, t: c.name, s: c.source, a: 'Remove' });
+// A signed-in device (a session on the hub). Sessions can't be renamed: they can be ended.
 function viewerRow(v) {
   const seen = v.you ? 'This device' : `Last seen ${new Date(v.last_seen * 1000).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}`;
-  return { id: v.id, t: v.name, s: v.role === 'owner' ? `${seen} · owner` : seen, a: v.you ? 'Rename' : 'Remove' };
+  const name = v.device || (v.kind === 'app' ? 'App' : 'Browser');
+  return { id: v.id, t: name, s: v.member ? `${v.member} · ${seen}` : seen, a: 'Remove' };
 }
 
 /** Fills in what the screens read (cameras, devices, hubPaired) from the lists behind them. */
@@ -153,12 +155,12 @@ export function setHub(hub) {
   if (hub) refreshHub();
 }
 
-/** A hub answer of 401 means this viewer was removed there: forget the hub here too. */
+/** A hub answer of 401 means this device was signed out there (or its session ran out): forget the hub here too. */
 function hubFailed(err, hub) {
   if (state.hub !== hub) return;
   if (err instanceof HubError && err.status === 401) {
     setHub(null);
-    announce('This device is no longer paired with the home hub');
+    announce('You’re signed out of the home hub. Sign in again to see your cameras.');
   } else if (state.hubReachable) {
     setState({ hubReachable: false });
   }
@@ -176,7 +178,7 @@ export function refreshHub() {
   refreshing = Promise.all([
     hubGet(hub, '/api/cameras'),
     hubGet(hub, `/api/events?since=${weekAgo}`),
-    hubGet(hub, '/api/viewers'),
+    hubGet(hub, hub.member && hub.member.role === 'admin' ? '/api/household/sessions' : '/api/me/sessions'),
     hubGet(hub, '/api/settings'),
   ])
     .then(([cams, events, viewers, settings]) => {
@@ -185,7 +187,7 @@ export function refreshHub() {
         ...(asked > settingsSentAt + 500 ? fromHubSettings(settings) : null),
         hubCameras: cams.cameras.map(viewerCamera),
         hubEvents: events.events.map(viewerEvent),
-        hubViewers: viewers.viewers,
+        hubViewers: viewers.sessions,
         hubReachable: true,
       });
     })
@@ -226,14 +228,14 @@ export async function removeHubEvent(hubId) {
   setState({ hubEvents: state.hubEvents.filter((e) => e.hubId !== hubId) });
 }
 
-/** Unpair this device: the hub forgets its key, and this device forgets the hub. */
+/** Sign out of the hub: it ends this device's session, and this device forgets the hub. */
 export async function unpairHub() {
   const hub = state.hub;
   if (!hub) return;
   try {
-    await hubSend(hub, 'DELETE', `/api/viewers/${hub.viewerId}`);
+    await hubSend(hub, 'POST', '/api/auth/logout');
   } catch {
-    // Hub unreachable: forget it here anyway; the key can be removed on the hub later.
+    // Hub unreachable: forget it here anyway; the session can be ended on the hub later.
   }
   setHub(null);
 }
@@ -267,11 +269,13 @@ export function updateCamera(id, name) {
   return Promise.resolve();
 }
 
-/** Rename or remove a viewer. Removing one on the hub makes its key stop working. */
+/** Rename or remove a device. On a hub, removing ends that device's session (it has to sign in again); there is no rename. */
 export function updateViewer(id, name) {
   if (state.hubPaired) {
-    if (!name && id === state.hub.viewerId) return unpairHub();
-    return onHub(name ? 'PATCH' : 'DELETE', `/api/viewers/${id}`, name ? { name } : undefined);
+    if (name) return Promise.resolve();
+    if (state.hubViewers.some((v) => v.id === id && v.you)) return unpairHub();
+    const admin = state.hub.member && state.hub.member.role === 'admin';
+    return onHub('DELETE', `${admin ? '/api/household/sessions' : '/api/me/sessions'}/${id}`);
   }
   session.viewerRows = name ? session.viewerRows.map((x) => (x.id === id ? { ...x, t: name } : x)) : session.viewerRows.filter((x) => x.id !== id);
   setState({});

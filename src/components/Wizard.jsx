@@ -20,7 +20,7 @@ import { CheckIcon, LockIcon, SpinnerIcon, WarningIcon } from './icons.jsx';
 //   check     async (ctx) => summary | { summary, values }
 //             Throw an Error whose message says, for the person, what went wrong.
 //             Leave out for a manual step: the button then just confirms.
-//   checkLabel, checkingLabel, confirmLabel
+//   checkLabel, checkingLabel, confirmLabel   (checkLabel can also be (values) => text)
 //   note      small print under the button
 //
 // ctx is { values, set(patch) }. Values are shared across the flow's steps.
@@ -159,7 +159,7 @@ function StepCard({ step, number, status, locked, previous, values, set, heading
       ? 'Try again'
       : manual
         ? step.confirmLabel || 'I’ve done this'
-        : step.checkLabel || 'Check';
+        : pick(step.checkLabel) || 'Check';
 
   return (
     <section

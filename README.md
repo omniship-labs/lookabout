@@ -31,7 +31,7 @@ As of 15 Nov 2026:
 | Android app | `android/` | Builds. Start, viewer tabs and live video from a test stream checked on an emulator. No tests. |
 | iOS app | `ios/` | Sources type-check. **Never built or run** (#30). No tests. |
 | Home hub | `hub/` | Pairing, camera bridge, recording, motion and cry detection, clips and the viewer API work against stand-in cameras with the web viewer, and have tests. **Never run on a Pi or as a container** (#20). No alerts yet (#22). |
-| Accounts | `docs/hub-auth.md` | Contract drafted, waiting on sign-off (#48). Nothing built beyond the wizard component (#49). |
+| Accounts | `hub/`, `docs/hub-auth.md` | Hub side of G3 built and tested against stand-ins: local accounts, first admin, sessions, invites, camera groups with view/manage, sharing, tickets, audit log, no CORS. Web app signs in through the hub wizard (**not seen in a browser**). **Not built:** passkeys, Google and Apple sign-in, Account and Household screens (G4), Pages landing (G5), install wizard (G6), remote access (G7), provider wizards (G8, G9), health panel (G10). The native apps still pair the old way. |
 
 What is real: the camera role on each platform (device camera, dim, pause),
 themes, settings, cameras added by address (ESP32 / Pi stream shows in the

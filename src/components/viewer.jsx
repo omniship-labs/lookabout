@@ -1,6 +1,6 @@
 import React from 'react';
 import { href } from '../lib/router.js';
-import { useLayout } from '../lib/hooks.js';
+import { useAsyncUrl, useLayout } from '../lib/hooks.js';
 import { hubLine, useStore } from '../lib/store.js';
 import { hubMjpegUrl, hubWebrtc } from '../lib/hub.js';
 import { CRY_BAR_THRESHOLD, LEVEL_THRESHOLD, connection } from '../lib/sampleData.js';
@@ -81,8 +81,11 @@ function HubVideo({ cam, small }) {
     };
   }, [mode, hub, cam.id]);
 
+  // The stream address carries a short ticket for this camera, not the session.
+  const mjpegUrl = useAsyncUrl(() => (hub && mode === 'mjpeg' ? hubMjpegUrl(hub, cam.id) : Promise.resolve('')), [hub, cam.id, mode]);
+
   if (!hub) return null;
-  if (mode === 'mjpeg') return <img src={hubMjpegUrl(hub, cam.id)} alt="" style={fill} />;
+  if (mode === 'mjpeg') return mjpegUrl ? <img src={mjpegUrl} alt="" style={fill} /> : null;
   return <video ref={video} autoPlay muted playsInline style={fill} />;
 }
 
