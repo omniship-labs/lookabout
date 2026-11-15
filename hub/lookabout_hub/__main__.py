@@ -51,6 +51,8 @@ def main():
     if not hub.classifier:
         print(f"Cry detection is off: {hub.classifier_problem}.", file=sys.stderr)
     store.close_stale_events()
+    if hub.accounts.setup_needed():
+        hub.accounts.setup_code()      # printed in the log; also shown on the hub's page from the home network
 
     try:
         server = make_server(hub)

@@ -31,6 +31,45 @@ CREATE TABLE IF NOT EXISTS viewers (
     created REAL NOT NULL,
     last_seen REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS members (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    role TEXT NOT NULL DEFAULT 'member',       -- admin | member
+    status TEXT NOT NULL DEFAULT 'active',     -- invited | active
+    password_hash TEXT NOT NULL DEFAULT '',
+    strong INTEGER NOT NULL DEFAULT 0,         -- has a password of 14+ characters (or, later, a passkey)
+    invite_hash TEXT NOT NULL DEFAULT '',
+    invite_expires REAL NOT NULL DEFAULT 0,
+    invited REAL NOT NULL DEFAULT 0,
+    created REAL NOT NULL,
+    last_seen REAL NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    member_id TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    kind TEXT NOT NULL,                        -- browser | app
+    device TEXT NOT NULL DEFAULT '',
+    created REAL NOT NULL,
+    last_seen REAL NOT NULL,
+    expires REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS groups (id TEXT PRIMARY KEY, name TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS group_cameras (
+    group_id TEXT NOT NULL, camera_id TEXT NOT NULL, PRIMARY KEY (group_id, camera_id)
+);
+CREATE TABLE IF NOT EXISTS grants (
+    member_id TEXT NOT NULL,
+    group_id TEXT NOT NULL,
+    level TEXT NOT NULL,                       -- view | manage
+    by TEXT NOT NULL DEFAULT '',               -- who made it: an admin, or the manager who shared the group
+    PRIMARY KEY (member_id, group_id)
+);
+CREATE TABLE IF NOT EXISTS audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at REAL NOT NULL, actor TEXT NOT NULL DEFAULT '', action TEXT NOT NULL, detail TEXT NOT NULL DEFAULT ''
+);
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     kind TEXT NOT NULL,          -- offline | motion | crying
@@ -150,6 +189,7 @@ class Store:
         self._run("UPDATE events SET ended = ?, detail = 'Camera removed' WHERE camera_id = ? AND ended IS NULL",
                   (time.time(), camera_id))
         self._run("DELETE FROM zones WHERE camera_id = ?", (camera_id,))
+        self._run("DELETE FROM group_cameras WHERE camera_id = ?", (camera_id,))
         return self._run("DELETE FROM cameras WHERE id = ?", (camera_id,)).rowcount > 0
 
     def zones(self, camera_id):
@@ -191,11 +231,9 @@ class Store:
             self._run("UPDATE viewers SET last_seen = ? WHERE id = ?", (time.time(), viewer["id"]))
         return viewer
 
-    def rename_viewer(self, viewer_id, name):
-        return self._run("UPDATE viewers SET name = ? WHERE id = ?", (name, viewer_id)).rowcount > 0
-
-    def remove_viewer(self, viewer_id):
-        return self._run("DELETE FROM viewers WHERE id = ?", (viewer_id,)).rowcount > 0
+    def clear_viewers(self):
+        """Ends every pairing key from before accounts. Returns how many there were."""
+        return self._run("DELETE FROM viewers").rowcount
 
     # --- events ---------------------------------------------------------
 
@@ -233,11 +271,15 @@ class Store:
     def events_before(self, when):
         return self._all("SELECT * FROM events WHERE started < ?", (when,))
 
-    def events(self, since=0, kind=None, limit=200):
+    def events(self, since=0, kind=None, limit=200, cameras=None):
+        """Newest first. `cameras`, when given, is the only camera ids whose events are returned."""
         sql, args = "SELECT * FROM events WHERE started >= ?", [since]
         if kind:
             sql += " AND kind = ?"
             args.append(kind)
+        if cameras is not None:
+            sql += f" AND camera_id IN ({', '.join('?' * len(cameras))})"
+            args.extend(cameras)
         sql += " ORDER BY started DESC LIMIT ?"
         args.append(limit)
         return self._all(sql, args)

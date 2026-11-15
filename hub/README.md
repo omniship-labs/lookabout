@@ -29,13 +29,31 @@ docker compose up -d --build
 ```
 
 The first build takes several minutes on a Pi (it compiles go2rtc). Then open
-`http://<pi-address>:8787`. That page shows what the hub is doing and makes
-pairing codes.
+`http://<pi-address>:8787` from the home network. A new hub shows a **setup
+code** there (and prints it in `docker compose logs hub`). In Lookabout choose
+Home hub, enter the hub's address and the code, and make the first admin
+account (name, email, password of 10+ characters; 14+ counts as strong).
 
-To pair: in Lookabout open Cameras → **+** → *Home hub* (or Settings → Home
-hub), enter the hub's address, press **Show a pairing code** on the hub page
-and type the code. The viewer gets a key; the hub keeps only a hash of it.
-Removing the viewer under Paired devices makes the key stop working.
+After that everyone signs in with an account:
+
+- An admin invites people (Household) and passes on the invite link; the hub
+  sends no email. The invitee opens it and chooses a password.
+- Admins group cameras ("Nursery") and give members `view` or `manage` per
+  group. A camera in no group is for admins only. Managers can delete events
+  and clips, edit zones, rename cameras and share the group with other members
+  (view only).
+- A phone or app can sign in with a pairing code: an admin makes one for a
+  member (`POST /api/pairing/code {member}`) and the app trades it at
+  `POST /api/pair` for a session of that member.
+- Sessions last 30 days (7 while remote access is on) and are listed, and can
+  be ended, under Paired devices.
+
+Hubs that were paired before accounts keep working **read-only** until the
+first admin is made; making the first admin ends every old pairing key, and
+each device signs in once.
+
+Not built yet: passkeys, Google and Apple sign-in, the setup wizards and
+remote access (see `docs/hub-auth.md` and epic #13).
 
 Settings live in `docker-compose.yml`:
 
@@ -54,7 +72,7 @@ Everything the hub stores is in the `hub-data` volume.
 ```sh
 pip install -r requirements.txt
 python3 -m lookabout_hub --data ./data --model yamnet.tflite   # needs go2rtc and ffmpeg on PATH
-python3 -m unittest discover -s tests             # needs numpy; clip tests also ffmpeg
+python3 -m unittest discover -s tests             # needs numpy; clip tests also ffmpeg (sign-in tests take ~40 s: scrypt)
 ```
 
 Without go2rtc the hub still starts (pairing and the camera list work) but
@@ -63,10 +81,16 @@ LiteRT it runs without cry detection and says so in its log.
 
 ## Interface
 
-`lookabout_hub/server.py` lists every route. In short: `/api/hub`,
-`/api/pairing/code` and `/api/pair` are open; everything else needs the
-viewer's key as `Authorization: Bearer <token>` (or `?token=` where a
-browser can't set headers, such as `<img>`).
+`lookabout_hub/server.py` lists every route and `docs/hub-auth.md` says who
+may call each. In short: `/api/hub`, `/api/auth/providers`,
+`/api/auth/login/local`, `/api/auth/join`, `/api/setup/state`,
+`/api/setup/first-admin` and `/api/pair` are open; everything else needs a
+session, as the `lk_session` cookie or `Authorization: Bearer <token>`.
+Streams, snapshots and clips also take `?ticket=` (from
+`POST /api/cameras/<id>/ticket`, five minutes, one camera) where a browser
+can't set headers. A session in a URL (`?token=`) is no longer accepted. The
+hub sends no CORS headers: the web app has to be served from the hub itself
+(or, in development, through Vite's proxy).
 
 ## Status
 
@@ -80,6 +104,11 @@ zones and settings saved on the hub. **Not yet run on a Pi, as a Docker
 container, or against a real RTSP camera, USB webcam, microphone or a real
 baby.** Of the image, only the go2rtc build stage has been built. Detection
 thresholds are untuned: expect to adjust sensitivity on real scenes.
+
+Accounts and camera groups (G3) are tested against the HTTP interface with stand-in cameras,
+one case per route of the contract's table. **The web and native apps don't use them yet**:
+they still pair the old way, so against this hub they can't sign in until G3's app side and
+G4 land.
 
 Known limits:
 

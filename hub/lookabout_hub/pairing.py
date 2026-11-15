@@ -1,8 +1,8 @@
 """Pairing codes shown on the hub's page.
 
-A code is made when someone asks for one on the hub page, lasts five minutes
-and works once. A viewer that sends it gets a key (a random token) that it
-shows on every later request.
+A code is made by a signed-in admin for one member, lasts five minutes and
+works once. The app that sends it gets a session for that member (a random
+token it shows on every later request).
 """
 
 import hmac
@@ -26,26 +26,32 @@ class Pairing:
         self._code = None
         self._expires = 0.0
         self._wrong = 0
+        self._payload = None
 
-    def new_code(self):
-        """Makes a fresh code, replacing any earlier one. Returns (code, seconds left)."""
+    def new_code(self, payload=None):
+        """Makes a fresh code, replacing any earlier one. `payload` (who it is for) comes back when it is used.
+        Returns (code, seconds left)."""
         raw = "".join(secrets.choice(ALPHABET) for _ in range(8))
         with self._lock:
-            self._code = raw
+            self._code, self._payload = raw, payload
             self._expires = self._clock() + CODE_SECONDS
             self._wrong = 0
         return f"{raw[:4]}-{raw[4:]}", CODE_SECONDS
 
     def redeem(self, code):
         """True once for the current code. Five wrong tries cancel the code."""
+        return self.claim(code)[0]
+
+    def claim(self, code):
+        """(True, payload) once for the current code, else (False, None)."""
         with self._lock:
             if not self._code or self._clock() > self._expires:
                 self._code = None
-                return False
+                return False, None
             if hmac.compare_digest(normalize(code), self._code):
-                self._code = None
-                return True
+                payload, self._code = self._payload, None
+                return True, payload
             self._wrong += 1
             if self._wrong >= MAX_WRONG:
                 self._code = None
-            return False
+            return False, None

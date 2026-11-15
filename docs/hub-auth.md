@@ -1,7 +1,12 @@
 # Hub accounts and access: API contract
 
 Status: **owner's answers in (15 Nov 2026), ready for sign-off** (issue #48).
-Nothing here is built yet. Task numbers below are the GitHub issues' titles:
+Built in the hub so far (G3, `hub/lookabout_hub/accounts.py`, `server.py`): local accounts, first
+admin, sessions, invites, camera groups and grants, sharing, tickets, the audit log, route
+enforcement and no CORS, the move from pairing keys. **Not built:** passkeys, Google and Apple
+sign-in, `/api/auth/token`, provider settings, the setup wizard endpoints and remote access.
+Where the build added to or settled something this document left open, it says so under
+[As built](#as-built). Task numbers below are the GitHub issues' titles:
 G1–G10 are #48–#57 (epic #13), F1 is #43, F5 is #47, E4 is #39. The hub today has pairing keys only (B3, `hub/lookabout_hub/pairing.py`);
 this document is what replaces them. It is written to be language-neutral:
 the hub is Python (B9), but nothing below depends on that.
@@ -571,3 +576,24 @@ The owner's answers to the draft's questions:
 - **Q7. Pages to hub:** dropped. The hub sends no CORS headers.
 - **Q8. Old pairing keys:** all ended when the first admin is created;
   every device signs in again once.
+
+## As built
+
+Details the first build settled (G3):
+
+- `POST /api/auth/join` `{ invite, name, password }` accepts an invite link: it activates the
+  pending member and signs them in (cookie, or `{ token, me }` with `?app=1`).
+- `GET /api/setup/state` (open) → `{ setup_required, setup_code, devices }`. The code is returned
+  only to callers on a private or loopback address; `devices` is how many old pairing keys will be
+  ended. A wrong code five times replaces it with a new one, printed in the log.
+- `POST /api/pairing/code` is admin-only and takes `{ member }` (default: the admin). `POST /api/pair`
+  returns `{ token, member, hub }`.
+- `GET /api/cameras` adds `access` (`view` or `manage`) to each camera.
+- `POST /api/cameras` takes optional `groups: [ids]` for the new camera.
+- A member answers `GET /api/household` with `members` (id, name, role; active ones only) and
+  `groups` (id, name, level).
+- Login attempts count per email **and** client address; behind a tunnel on the same machine the
+  address is taken from `X-Forwarded-For`.
+- Tickets are kept in memory: a hub restart ends them.
+- The session cookie is `Secure` when the request carries `X-Forwarded-Proto: https`.
+- `OPTIONS` answers 405: nothing is allowed cross-origin.

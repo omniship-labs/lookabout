@@ -20,6 +20,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from lookabout_hub.accounts import Accounts  # noqa: E402
 from lookabout_hub.clips import SEGMENT_NAME, Clips  # noqa: E402
 from lookabout_hub.cry import CryTracker, pcm_to_samples  # noqa: E402
 from lookabout_hub.monitor import Monitor  # noqa: E402
@@ -252,13 +253,15 @@ class RoutesTest(unittest.TestCase):
         self.dir = tempfile.TemporaryDirectory()
         self.store = Store(os.path.join(self.dir.name, "hub.db"))
         self.clips = Clips(self.dir.name, self.store)
-        self.hub = Hub(self.store, Pairing(), FakeBridge(), Monitor(self.store), "Test hub", 0, self.dir.name, clips=self.clips)
+        self.hub = Hub(self.store, Pairing(), FakeBridge(), Monitor(self.store), "Test hub", 0, self.dir.name, clips=self.clips,
+                       accounts=Accounts(self.store, log=lambda text: None))
         self.hub.watchers = FakeWatchers()
         self.server = make_server(self.hub, host="127.0.0.1")
         self.base = f"http://127.0.0.1:{self.server.server_address[1]}"
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
-        code, _ = self.hub.pairing.new_code()
-        self.token = self.call("POST", "/api/pair", {"code": code, "name": "Phone"}, token=None)[1]["token"]
+        login = {"email": "sam@example.com", "password": "correct horse battery"}
+        self.call("POST", "/api/setup/first-admin", {"setup_code": self.hub.accounts.setup_code(), "name": "Sam", **login}, token=None)
+        self.token = self.call("POST", "/api/auth/login/local?app=1", login, token=None)[1]["token"]
         self.camera = self.call("POST", "/api/cameras", {"kind": "mjpeg", "name": "Garage", "address": "10.0.0.9"})[1]
 
     def tearDown(self):
@@ -278,6 +281,9 @@ class RoutesTest(unittest.TestCase):
         except urllib.error.HTTPError as err:
             payload, status, got = err.read(), err.code, err.headers
         return (status, payload, got) if raw else (status, json.loads(payload))
+
+    def ticket(self):
+        return self.call("POST", f"/api/cameras/{self.camera['id']}/ticket")[1]["ticket"]
 
     def test_settings(self):
         status, settings = self.call("GET", "/api/settings")
@@ -346,7 +352,7 @@ class RoutesTest(unittest.TestCase):
         event = self.call("GET", "/api/events")[1]["events"][0]
         self.assertEqual((event["clip"], event["thumb"]), (f"{event_id}.mp4", f"{event_id}.jpg"))
 
-        status, body, headers = self.call("GET", f"/api/clips/{event_id}.mp4?token={self.token}", token=None, raw=True)
+        status, body, headers = self.call("GET", f"/api/clips/{event_id}.mp4?ticket={self.ticket()}", token=None, raw=True)
         self.assertEqual((status, len(body), headers["Content-Type"]), (200, 100, "video/mp4"))
         status, body, headers = self.call("GET", f"/api/clips/{event_id}.mp4", headers={"Range": "bytes=10-19"}, raw=True)
         self.assertEqual((status, body, headers["Content-Range"]), (206, bytes(range(10, 20)), "bytes 10-19/100"))
