@@ -15,6 +15,37 @@ This repo is a monorepo:
 - [`ios/`](ios/) — SwiftUI app (XcodeGen project).
 - [`android/`](android/) — Kotlin/Compose app.
 
+Work is tracked in [GitHub issues](https://github.com/omniship-labs/lookabout/issues)
+(epics #7–#13). Contributor and agent rules, tests included, are in
+[`AGENTS.md`](AGENTS.md).
+
+## Status
+
+As of 15 Nov 2026:
+
+| Piece | Folder | State |
+|---|---|---|
+| Web app | `src/` | Builds. Main screens checked in a browser (light and dark, phone/tablet/desktop). Logic in `src/lib` has tests. The new hub pairing wizard hasn't been seen in a browser yet (#49). |
+| ESP32-S3 + USB webcam firmware | `firmware/esp32/` | Builds for the ESP32-S3 with ESP-IDF 5.3. Web interface, settings and over-Wi-Fi updates tested in QEMU (`firmware/esp32/qemu`). **Never run on a board** (#14–#19). |
+| Raspberry Pi camera node | `firmware/rpi/` | Has tests, with stand-in capture commands. **Never run on a Pi.** |
+| Android app | `android/` | Builds. Start, viewer tabs and live video from a test stream checked on an emulator. No tests. |
+| iOS app | `ios/` | Sources type-check. **Never built or run** (#30). No tests. |
+| Home hub | `hub/` | Pairing, camera bridge, recording, motion and cry detection, clips and the viewer API work against stand-in cameras with the web viewer, and have tests. **Never run on a Pi or as a container** (#20). No alerts yet (#22). |
+| Accounts | `docs/hub-auth.md` | Contract drafted, waiting on sign-off (#48). Nothing built beyond the wizard component (#49). |
+
+What is real: the camera role on each platform (device camera, dim, pause),
+themes, settings, cameras added by address (ESP32 / Pi stream shows in the
+web and Android viewers), firmware packaging, Wi-Fi firmware update from the
+web page (tested against a stand-in board, and the board side in QEMU), and on
+web the home hub: pairing, hub cameras (WebRTC live view, snapshot), events
+with clips (offline, motion, crying), motion zones, paired viewers.
+
+What is sample data: the nursery room and sound levels; on web the house
+cameras and events too while no hub is paired; all of it in the Android and
+iOS apps (`src/lib/sampleData.js`, `SampleData` in the apps). Phone-to-phone
+pairing and streaming, and the Nest / Ring / Wyze / Tesla flows are screens
+only.
+
 ## Web app
 
 ```sh
@@ -87,6 +118,30 @@ Cameras → **+** → *ESP32 camera* or *Raspberry Pi camera*, enter the board's
 address, test, add. The boards serve plain http, so open the web app over
 http on your own network (`npm run dev` is fine); an https page will block
 the stream.
+
+## Run each piece
+
+```sh
+# Web (needs NODE_AUTH_TOKEN for design-beacon, see AGENTS.md)
+NODE_AUTH_TOKEN=$(gh auth token) npm install
+npm run dev
+
+# ESP32 firmware, then package it for the web page and both apps
+cd firmware/esp32 && pio run -e esp32-s3-uvc && cd ../..
+npm run firmware:package
+
+# Home hub (on the Pi; then open http://<pi>:8787)
+cd hub && docker compose up -d --build
+
+# Pi camera node (on the Pi)
+cd firmware/rpi && ./install.sh
+
+# Android (no Gradle wrapper yet; use Android Studio or a local Gradle 8.13+)
+cd android && gradle :app:assembleDebug
+
+# iOS
+cd ios && xcodegen generate && open Lookabout.xcodeproj
+```
 
 ## Tests and coverage
 

@@ -11,7 +11,19 @@ hub), #9 (C, phone to phone), #10 (D, native apps), #11 (E, web loose ends),
 #12 (F, security) and #13 (G, accounts and remote access). When a pull request
 moves a task along, say so on its issue: what's done, what's left, and what
 was only tested in an emulator or with stand-ins. (This replaces the old
-HANDOVER.md, removed on 15 Nov 2026.)
+HANDOVER.md, removed on 15 Nov 2026; its status table and run commands are in
+the README, its tasks in the issues.)
+
+The owner's order of priorities, as last written down (14 Nov 2026):
+
+1. Run the hub on the Pi (#20) and point it at real cameras (#21).
+2. Alerts (#22), then tune detection on real cameras.
+3. Switch GitHub Pages on, then re-run the Deploy workflow (#38).
+4. Flash a real ESP32-S3 (#14–#19, #29), then Snapshot on a real board (#42).
+5. Add `NODE_AUTH_TOKEN` to the Claude cloud environment (#41).
+6. Accounts and camera gating (epic #13): the contract (#48) and the wizard
+   component (#49) are under way in #6. The hub's pairing keys are what
+   accounts replace.
 
 ## Tests are required
 
