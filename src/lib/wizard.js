@@ -64,6 +64,26 @@ export function finishCheck(steps, progress, id, result) {
     : { state: 'failed', reason: String(result.reason || 'That didn’t work. Try again.'), summary: '' });
 }
 
+/**
+ * Runs a step's check and says how it went, as finishCheck takes it plus any
+ * values the check wants kept. A check returns a summary string or
+ * { summary, values }, and throws an Error whose message is the reason it
+ * failed. A step without a check (a manual confirm) always passes.
+ */
+export async function runCheck(step, ctx) {
+  try {
+    const out = step.check ? await step.check(ctx) : '';
+    const rich = out && typeof out === 'object';
+    return { ok: true, summary: String((rich ? out.summary : out) || ''), values: rich && out.values ? out.values : null };
+  } catch (err) {
+    const reason = err && typeof err.message === 'string' && err.message.trim() ? err.message : 'That didn’t work. Try again.';
+    return { ok: false, reason, values: null };
+  }
+}
+
+/** Whether passing step `index` finishes the flow. */
+export const finishesFlow = (steps, index, result) => result.ok && index === steps.length - 1;
+
 /** Go back to a passed step: it and every step after it start again. */
 export function reopen(steps, progress, id) {
   const index = steps.findIndex((s) => s.id === id);

@@ -36,3 +36,25 @@ test('wizard steps open in order, fail with a reason, reopen and restore', () =>
   const bad = localProgress('t', { storage: { getItem() { throw new Error('x'); }, setItem() { throw new Error('x'); }, removeItem() { throw new Error('x'); } } });
   assert.equal(bad.load(), null); bad.save(restore(steps, null)); bad.clear();
 });
+
+test('runCheck turns what a check returns or throws into a result', async () => {
+  const { runCheck, finishesFlow } = await import('../src/lib/wizard.js');
+  const ctx = { values: { a: 1 }, set() {} };
+  assert.deepEqual(await runCheck({}, ctx), { ok: true, summary: '', values: null }, 'manual step passes');
+  assert.deepEqual(await runCheck({ check: async () => 'Found it' }, ctx), { ok: true, summary: 'Found it', values: null });
+  assert.deepEqual(await runCheck({ check: async () => ({ summary: 'S', values: { base: 'x' } }) }, ctx), { ok: true, summary: 'S', values: { base: 'x' } });
+  assert.deepEqual(await runCheck({ check: () => 'sync works too' }, ctx), { ok: true, summary: 'sync works too', values: null });
+  let seen;
+  await runCheck({ check: (c) => { seen = c.values; } }, ctx);
+  assert.equal(seen.a, 1, 'check gets the flow values');
+  assert.deepEqual(await runCheck({ check: async () => { throw new Error('Hub not found.'); } }, ctx), { ok: false, reason: 'Hub not found.', values: null });
+  for (const bad of [new Error(''), new Error('   '), 'a string', null]) {
+    const r = await runCheck({ check: async () => { throw bad; } }, ctx);
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'That didn’t work. Try again.', 'a check that throws without a message still gives a reason');
+  }
+  const steps = [{ id: 'a' }, { id: 'b' }];
+  assert.equal(finishesFlow(steps, 1, { ok: true }), true);
+  assert.equal(finishesFlow(steps, 0, { ok: true }), false);
+  assert.equal(finishesFlow(steps, 1, { ok: false }), false);
+});

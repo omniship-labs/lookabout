@@ -2,6 +2,7 @@ import React from 'react';
 import { navigate } from '../lib/router.js';
 import { addCameras, addHubCamera, getState, refreshHub, setHub, unpairHub, useStore } from '../lib/store.js';
 import { hubGet, hubInfo, hubTestCamera, normalizeHubAddress, pairWithHub } from '../lib/hub.js';
+import { blockedByHttps, codeReady, findHub, freeSpace, typedAddress } from '../lib/hubPairing.js';
 import { addGroups, connectKinds, guidedFlows, nestCams, ringCams, teslaClips, wyzeCams } from '../lib/sampleData.js';
 import { BackBar, CheckMark, Cta, Eyebrow, Field, Group, Note, Page, Pill, Row, RowText, Spacer, StatusBox, Steps, display, mono } from '../components/ui.jsx';
 import { ClipRow, VideoTile } from '../components/viewer.jsx';
@@ -432,8 +433,6 @@ function thisDeviceName() {
   return `${what} browser`;
 }
 
-const freeSpace = (bytes) => (bytes >= 1e12 ? `${(bytes / 1e12).toFixed(1)} TB free` : `${Math.round(bytes / 1e9)} GB free`);
-
 /** The paired hub: what it is, and unpairing. */
 function HubPaired() {
   const s = useStore();
@@ -481,7 +480,6 @@ function HubPaired() {
  */
 const HUB_README = 'https://github.com/omniship-labs/lookabout/tree/main/hub#install-on-a-raspberry-pi';
 const PAIR_SECRET = ['code']; // the pairing code is never written to storage
-const typedAddress = (values) => values.address ?? 'raspberrypi.local:8787';
 
 const pairSteps = [
   {
@@ -500,7 +498,7 @@ const pairSteps = [
     title: 'Find the hub',
     body: ({ values, set }) => {
       const base = normalizeHubAddress(typedAddress(values));
-      const insecure = window.location.protocol === 'https:' && base.startsWith('http://');
+      const insecure = blockedByHttps(base, window.location.protocol);
       return (
         <Field
           label="Hub address"
@@ -518,17 +516,7 @@ const pairSteps = [
     ready: (values) => !!normalizeHubAddress(typedAddress(values)),
     checkLabel: 'Find the hub',
     checkingLabel: 'Looking…',
-    check: async ({ values }) => {
-      const base = normalizeHubAddress(typedAddress(values));
-      if (window.location.protocol === 'https:' && base.startsWith('http://')) {
-        throw new Error('The browser blocks a plain http hub from this https page. Open Lookabout over http on your own network instead.');
-      }
-      const found = await hubInfo(base);
-      return {
-        summary: `${found.name} at ${base} · ${freeSpace(found.free_bytes)} · ${found.cameras} camera${found.cameras === 1 ? '' : 's'}`,
-        values: { base },
-      };
-    },
+    check: ({ values }) => findHub(values, window.location.protocol),
   },
   {
     id: 'pair',
@@ -559,7 +547,7 @@ const pairSteps = [
         />
       </>
     ),
-    ready: (values) => (values.code || '').replace(/[^A-Za-z0-9]/g, '').length >= 8,
+    ready: (values) => codeReady(values.code),
     checkLabel: 'Pair this hub',
     checkingLabel: 'Pairing…',
     check: async ({ values }) => {

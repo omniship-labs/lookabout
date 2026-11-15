@@ -261,7 +261,8 @@ Tasks, in build order:
       **Built:** `src/components/Wizard.jsx` (UI, `CopyBox`) and
       `src/lib/wizard.js` (state rules and a browser-local progress store;
       `tests/wizard.test.mjs`, run by `npm test` and the PR check). Home hub
-      pairing (`HubSetup` in `src/screens/Add.jsx`) now uses it: Start the hub
+      pairing (`HubSetup` in `src/screens/Add.jsx`, its checks in
+      `src/lib/hubPairing.js`, tested in `tests/hubPairing.test.mjs`) now uses it: Start the hub
       (manual confirm) → Find the hub (checks `/api/hub`) → Pair. **Left:**
       progress is saved in the browser, not yet on the hub: add a store on
       `/api/setup/{flow}` once the hub has those routes (G1). The screen was
@@ -377,6 +378,7 @@ In order:
 # Web
 NODE_AUTH_TOKEN=$(gh auth token) npm install
 npm run dev
+npm test                                      # web logic tests (node:test), no install needed
 
 # ESP32 firmware, then package it for the web page and both apps
 cd firmware/esp32 && pio run -e esp32-s3-uvc && cd ../..
@@ -400,6 +402,13 @@ Design states that need live data can be forced on web with `?state=`
 (`offline`, `ring`, `reconnecting`, `empty`, `battery`); see the root README.
 
 ## Things that will trip you up
+
+- **Tests come with changes.** Web logic that can run without a browser goes in
+  `src/lib/` (no React or JSX imports) with a `node:test` file in `tests/`;
+  screens call it. `npm test` runs them in plain Node, even where `npm install`
+  doesn't work, and the `web` PR check runs them too. Hub changes get cases in
+  `hub/tests/`. A component that can't be tested this way is checked in a
+  browser instead, and the handover says so until someone has.
 
 - `npm install` needs `NODE_AUTH_TOKEN` for the org's GitHub Packages registry.
 - The firmware build output is copied into `public/firmware/`, the iOS

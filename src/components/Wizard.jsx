@@ -1,6 +1,6 @@
 import React from 'react';
 import { announce } from '../lib/hooks.js';
-import { activeIndex, finishCheck, localProgress, reopen, restore, setValues, startCheck } from '../lib/wizard.js';
+import { activeIndex, finishCheck, finishesFlow, localProgress, reopen, restore, runCheck, setValues, startCheck } from '../lib/wizard.js';
 import { Bar, Cta, Eyebrow, Note, Pill, cardStyle, display, mono } from './ui.jsx';
 import { CheckIcon, LockIcon, SpinnerIcon, WarningIcon } from './icons.jsx';
 
@@ -67,23 +67,16 @@ export function Wizard({ flow, steps, initialValues, secret, store: givenStore, 
   const run = async (step, index) => {
     const ctx = { values: progress.values, set };
     setProgress((p) => startCheck(steps, p, step.id));
-    let result;
-    let values = null;
-    try {
-      const out = step.check ? await step.check(ctx) : '';
-      values = out && typeof out === 'object' ? out.values : null;
-      result = { ok: true, summary: out && typeof out === 'object' ? out.summary : out };
-    } catch (err) {
-      result = { ok: false, reason: err && err.message };
-    }
-    const finished = result.ok && index === steps.length - 1;
+    const result = await runCheck(step, ctx);
+    const { values } = result;
+    const finished = finishesFlow(steps, index, result);
     if (finished && forgetWhenDone) {
       forgotten.current = true;
       store.clear?.();
     }
     if (mounted.current) {
       setProgress((p) => finishCheck(steps, values ? setValues(p, values) : p, step.id, result));
-      announce(result.ok ? `${step.title}: done.` : `${step.title}: ${result.reason || 'that didn’t work.'}`);
+      announce(result.ok ? `${step.title}: done.` : `${step.title}: ${result.reason}`);
     }
     // Called even if the check's own work replaced this screen (pairing does).
     if (finished && onDone) onDone({ ...progress.values, ...values });
