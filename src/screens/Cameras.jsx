@@ -1,7 +1,8 @@
 import React from 'react';
-import { href } from '../lib/router.js';
-import { hubLine, useStore } from '../lib/store.js';
-import { eventDays as groupByDay } from '../lib/hub.js';
+import { href, navigate } from '../lib/router.js';
+import { hubLine, removeHubEvent, useStore } from '../lib/store.js';
+import { eventDays as groupByDay, hubClipFile, hubClipUrl, hubFrame, hubGet, hubSend } from '../lib/hub.js';
+import { announce } from '../lib/hooks.js';
 import { applyScenario, clip, eventDays, zones as sampleZones } from '../lib/sampleData.js';
 import { BackBar, Banner, Chip, Cta, Eyebrow, Group, Note, Page, Row, SliderBar, display, mono } from '../components/ui.jsx';
 import { CameraTile, ClipRow, Shell, ShellHeader, VideoTile } from '../components/viewer.jsx';
@@ -114,13 +115,27 @@ export function Cameras({ scenario }) {
           </div>
           <div style={{ ...section, paddingBottom: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
             {shown.map((e) => (
-              <ClipRow key={e.id} title={e.t} meta={e.m} time={e.time} play={false} />
+              <HubEventRow key={e.id} e={e} hub={s.hub} />
             ))}
             {!shown.length ? <Note size={13}>{today.length ? 'Nothing matches this filter today.' : 'Nothing has happened today.'}</Note> : null}
           </div>
         </>
       ) : null}
     </Shell>
+  );
+}
+
+/** One event from the hub: opens its clip once the hub has cut one. */
+function HubEventRow({ e, hub }) {
+  return (
+    <ClipRow
+      title={e.t}
+      meta={e.clip ? `${e.m ? `${e.m} · ` : ''}clip` : e.m}
+      time={e.time}
+      to={e.clip ? `/events/clip/${e.hubId}` : undefined}
+      thumb={e.clip && e.thumb ? hubClipUrl(hub, e.thumb) : undefined}
+      play={!!e.clip}
+    />
   );
 }
 
@@ -151,9 +166,13 @@ export function Events() {
         {days.map((d) => (
           <React.Fragment key={d.label}>
             <Eyebrow style={{ paddingTop: 6 }}>{d.label}</Eyebrow>
-            {d.items.map((e) => (
-              <ClipRow key={e.id} title={e.t} meta={e.m} time={e.time} to={s.hubPaired ? undefined : '/events/clip'} play={false} />
-            ))}
+            {d.items.map((e) =>
+              s.hubPaired ? (
+                <HubEventRow key={e.id} e={e} hub={s.hub} />
+              ) : (
+                <ClipRow key={e.id} title={e.t} meta={e.m} time={e.time} to="/events/clip" play={false} />
+              )
+            )}
           </React.Fragment>
         ))}
         {!days.length ? <Note size={13}>Nothing of this kind yet.</Note> : null}
@@ -162,8 +181,103 @@ export function Events() {
   );
 }
 
-/** Clip player. */
-export function Clip() {
+/** A clip the hub cut for an event: play, save, share, delete. */
+function HubClip({ eventId }) {
+  const s = useStore();
+  const e = s.hubEvents.find((x) => String(x.hubId) === String(eventId));
+  const [busy, setBusy] = React.useState('');
+  const [confirming, setConfirming] = React.useState(false);
+
+  if (!e || !e.clip) {
+    return (
+      <Page pad="48px var(--lk-side) 20px" gap={14}>
+        <BackBar to="/events" eyebrow="EVENTS" />
+        <Note size={13}>{s.hubEvents.length || !s.hubReachable ? 'The hub no longer has this clip.' : 'Asking the hub…'}</Note>
+      </Page>
+    );
+  }
+  const fileName = `${e.t.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${new Date(e.startedMs).toISOString().slice(0, 16).replace(/[-:T]/g, '')}.mp4`;
+  const file = async () => new File([await hubClipFile(s.hub, e.clip)], fileName, { type: 'video/mp4' });
+  const act = async (what, fn) => {
+    setBusy(what);
+    try {
+      await fn();
+    } catch (err) {
+      if (err.name !== 'AbortError') announce(err.message || 'That didn’t work');
+    }
+    setBusy('');
+  };
+  const save = () =>
+    act('save', async () => {
+      const url = URL.createObjectURL(await file());
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      announce(`Clip saved as ${fileName}`);
+    });
+  const share = () =>
+    act('share', async () => {
+      const f = await file();
+      await navigator.share({ files: [f], title: e.t });
+    });
+  const remove = () =>
+    act('delete', async () => {
+      await removeHubEvent(e.hubId);
+      navigate('/events', { replace: true });
+    });
+  // Sharing a file works on phones and tablets; desktop browsers mostly can't.
+  const canShare = !!navigator.canShare && navigator.canShare({ files: [new File([], 'clip.mp4', { type: 'video/mp4' })] });
+  const when = new Date(e.startedMs).toLocaleString('en-US', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+
+  return (
+    <Page pad="48px var(--lk-side) 20px" gap={14}>
+      <BackBar to="/events" eyebrow="EVENTS" />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <h1 style={display(22)}>{e.t}</h1>
+        <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{[when, e.lengthLabel, e.kind === 'motion' ? e.m.split(' · ')[0] : ''].filter(Boolean).join(' · ')}</span>
+      </div>
+      <div data-theme="dark" style={{ borderRadius: 'var(--radius-lg)', overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--surface-card)', lineHeight: 0 }}>
+        <video
+          controls
+          playsInline
+          preload="metadata"
+          poster={e.thumb ? hubClipUrl(s.hub, e.thumb) : undefined}
+          src={hubClipUrl(s.hub, e.clip)}
+          aria-label={`Recorded clip: ${e.t}`}
+          style={{ width: '100%', maxHeight: '60dvh', display: 'block' }}
+        />
+      </div>
+      {confirming ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+          <Cta variant="outline" style={{ fontSize: 14 }} onClick={() => setConfirming(false)}>Keep</Cta>
+          <Cta variant="outline" style={{ fontSize: 14, color: 'var(--osl-danger)' }} disabled={busy === 'delete'} onClick={remove}>
+            {busy === 'delete' ? 'Deleting…' : 'Delete for everyone'}
+          </Cta>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${canShare ? 3 : 2}, minmax(0, 1fr))`, gap: 8 }}>
+          <Cta variant="outline" style={{ fontSize: 14 }} disabled={busy === 'save'} onClick={save}>{busy === 'save' ? 'Saving…' : 'Save'}</Cta>
+          {canShare ? <Cta variant="outline" style={{ fontSize: 14 }} disabled={busy === 'share'} onClick={share}>Share</Cta> : null}
+          <Cta variant="outline" style={{ fontSize: 14 }} onClick={() => setConfirming(true)}>Delete</Cta>
+        </div>
+      )}
+      <Note size={13}>
+        Clips live on the hub and are deleted after {s.keepDays} days. Save downloads this one to this device. Delete removes it from the hub for every viewer.
+      </Note>
+    </Page>
+  );
+}
+
+/** Clip player. `eventId` is a hub event; without one this is the sample clip. */
+export function Clip({ eventId }) {
+  return eventId ? <HubClip eventId={eventId} /> : <SampleClip />;
+}
+
+function SampleClip() {
   const [playing, setPlaying] = React.useState(false);
   const m = clip.marker;
   return (
@@ -226,15 +340,79 @@ const zoneColors = {
 const VIEW_W = 350;
 const VIEW_H = 250;
 
-/** Motion zones: drag corners to shape a zone. */
-export function Zones() {
-  const [zones, setZones] = React.useState(sampleZones);
-  const [editing, setEditing] = React.useState(sampleZones[0].id);
+const toFractions = (zones) => zones.map((z) => ({ ...z, points: z.points.map(([x, y]) => [x / VIEW_W, y / VIEW_H]) }));
+const toView = (zones) => zones.map((z) => ({ ...z, points: z.points.map(([x, y]) => [Math.round(x * VIEW_W), Math.round(y * VIEW_H)]) }));
+
+/**
+ * Motion zones: drag corners to shape a zone.
+ * With a hub paired the zones belong to one of its cameras (`/zones/<camera id>`),
+ * are drawn over a frame from that camera, and are saved on the hub, which
+ * only reports motion inside them. Without a hub this is the sample screen.
+ */
+export function Zones({ camId }) {
+  const s = useStore();
+  const hubCams = s.hubCameras;
+  const cam = s.hubPaired ? hubCams.find((c) => c.id === camId) || hubCams[0] : null;
+  const [zones, setZones] = React.useState(s.hubPaired ? [] : sampleZones);
+  const [editing, setEditing] = React.useState(s.hubPaired ? null : sampleZones[0].id);
   const [sensitivity, setSensitivity] = React.useState(60);
+  const [still, setStill] = React.useState('');
+  const [load, setLoad] = React.useState(s.hubPaired ? 'loading' : 'ready'); // loading | ready | failed | saving
+  const [problem, setProblem] = React.useState('');
+  const camKey = cam ? cam.id : '';
+
+  React.useEffect(() => {
+    if (!camKey) return undefined;
+    let gone = false;
+    let url = '';
+    const hub = s.hub;
+    setLoad('loading');
+    hubGet(hub, `/api/cameras/${camKey}/zones`)
+      .then((j) => {
+        if (gone) return;
+        const loaded = toView(j.zones);
+        setZones(loaded);
+        setEditing(loaded.length ? loaded[0].id : null);
+        setSensitivity(j.sensitivity);
+        setLoad('ready');
+      })
+      .catch((err) => {
+        if (gone) return;
+        setProblem(err.message);
+        setLoad('failed');
+      });
+    hubFrame(hub, camKey)
+      .then((blob) => {
+        if (gone) return;
+        url = URL.createObjectURL(blob);
+        setStill(url);
+      })
+      .catch(() => {});
+    return () => {
+      gone = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [camKey]);
+
+  const done = async () => {
+    if (!cam) {
+      navigate('/settings');
+      return;
+    }
+    setLoad('saving');
+    try {
+      await hubSend(s.hub, 'PUT', `/api/cameras/${cam.id}/zones`, { zones: toFractions(zones), sensitivity });
+      navigate('/settings');
+    } catch (err) {
+      setProblem(err.message);
+      setLoad('ready');
+    }
+  };
   const svgRef = React.useRef(null);
   const drag = React.useRef(null);
 
-  const toView = (e) => {
+  const pointAt = (e) => {
     const r = svgRef.current.getBoundingClientRect();
     return [
       Math.round(Math.min(VIEW_W, Math.max(0, ((e.clientX - r.left) / r.width) * VIEW_W))),
@@ -243,7 +421,7 @@ export function Zones() {
   };
   const onMove = (e) => {
     if (drag.current == null) return;
-    const point = toView(e);
+    const point = pointAt(e);
     setZones((zs) => zs.map((z) => (z.id === editing ? { ...z, points: z.points.map((p, i) => (i === drag.current ? point : p)) } : z)));
   };
   const nudge = (index, dx, dy) => {
@@ -256,7 +434,7 @@ export function Zones() {
     );
   };
   const addZone = () => {
-    const id = `zone-${zones.length + 1}`;
+    const id = `zone-${Date.now().toString(36)}`;
     setZones((zs) => [...zs, { id, name: `Zone ${zs.length + 1}`, action: 'alert + record', tone: 'accent', points: [[120, 80], [230, 80], [230, 170], [120, 170]] }]);
     setEditing(id);
   };
@@ -265,10 +443,13 @@ export function Zones() {
   return (
     <Page pad="48px var(--lk-side) 20px" gap={14}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-        <h1 style={display(22)}>Front door zones</h1>
-        <a
-          href={href('/settings')}
+        <h1 style={display(22)}>{cam ? `${cam.name} zones` : s.hubPaired ? 'Motion zones' : 'Front door zones'}</h1>
+        <button
+          type="button"
+          onClick={done}
+          disabled={load === 'saving' || load === 'loading'}
           style={{
+            border: 0,
             height: 36,
             padding: '0 14px',
             borderRadius: 'var(--radius-pill)',
@@ -280,9 +461,18 @@ export function Zones() {
             font: '600 13px var(--font-sans)',
           }}
         >
-          Done
-        </a>
+          {load === 'saving' ? 'Saving…' : 'Done'}
+        </button>
       </div>
+      {s.hubPaired && hubCams.length > 1 ? (
+        <div style={{ display: 'flex', gap: 8, overflowX: 'auto' }}>
+          {hubCams.map((c) => (
+            <Chip key={c.id} active={c.id === cam.id} onClick={() => navigate(`/zones/${c.id}`)}>{c.name}</Chip>
+          ))}
+        </div>
+      ) : null}
+      {s.hubPaired && !cam ? <Note size={13}>Your hub has no cameras yet. Add one, then draw its zones here.</Note> : null}
+      {problem ? <Note size={13} style={{ color: 'var(--osl-danger)' }}>{problem}</Note> : null}
       <div
         style={{
           position: 'relative',
@@ -293,6 +483,7 @@ export function Zones() {
           overflow: 'hidden',
         }}
       >
+        {still ? <img src={still} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'fill' }} /> : null}
         <svg
           ref={svgRef}
           role="img"
@@ -341,8 +532,12 @@ export function Zones() {
           ))}
         </svg>
       </div>
-      <Note size={13}>Drag corners to shape a zone. Motion outside zones is ignored.</Note>
-      <Group>
+      <Note size={13}>
+        {zones.length || !s.hubPaired
+          ? 'Drag corners to shape a zone. Motion outside zones is ignored.'
+          : 'No zones drawn: motion anywhere in the picture counts. Add a zone to narrow it down.'}
+      </Note>
+      <Group style={zones.length ? undefined : { display: 'none' }}>
         {zones.map((z) => (
           <Row key={z.id} onClick={() => setEditing(z.id)} style={{ justifyContent: 'flex-start', gap: 10 }}>
             <span
@@ -367,6 +562,19 @@ export function Zones() {
         <span style={{ fontSize: 13, color: 'var(--text-body)', width: 56, textAlign: 'right' }}>{level}</span>
       </div>
       <Cta variant="outline" onClick={addZone} style={{ fontSize: 14, border: '1px dashed var(--border-strong)' }}>+ Add zone</Cta>
+      {s.hubPaired && editing ? (
+        <Cta
+          variant="outline"
+          style={{ fontSize: 14 }}
+          onClick={() => {
+            const left = zones.filter((z) => z.id !== editing);
+            setZones(left);
+            setEditing(left.length ? left[0].id : null);
+          }}
+        >
+          Remove {(zones.find((z) => z.id === editing) || {}).name || 'this zone'}
+        </Cta>
+      ) : null}
     </Page>
   );
 }

@@ -1,6 +1,6 @@
 import React from 'react';
 import { ProjectByline } from '@omniship-labs/design-beacon/ProjectByline';
-import { setState, updateCamera, updateViewer, useStore } from '../lib/store.js';
+import { saveSetting, setState, updateCamera, updateViewer, useStore } from '../lib/store.js';
 import { BackBar, Chip, Eyebrow, Group, Note, Page, Row, RowText, Segmented, Spacer, Switch, display } from '../components/ui.jsx';
 import { Shell } from '../components/viewer.jsx';
 
@@ -20,7 +20,7 @@ function Toggle({ title, sub, field }) {
   return (
     <Row>
       <RowText title={title} sub={sub} />
-      <Switch label={title} checked={s[field]} onChange={(v) => setState({ [field]: v })} />
+      <Switch label={title} checked={s[field]} onChange={(v) => saveSetting({ [field]: v })} />
     </Row>
   );
 }
@@ -65,24 +65,25 @@ export function Settings() {
             title="Sensitivity"
             sub="Ignores fan and white noise"
             value={s.sensitivity}
-            onClick={() => setState({ sensitivity: cycle(['Low', 'Medium', 'High'], s.sensitivity) })}
+            onClick={() => saveSetting({ sensitivity: cycle(['Low', 'Medium', 'High'], s.sensitivity) })}
           />
           <Toggle title="Keep audio on in background" sub="Hear the room with the app closed" field="backgroundAudio" />
         </Section>
 
         <Section label="SECURITY CAMERAS">
           <Toggle title="Motion alerts" sub="Only inside drawn zones" field="motionAlerts" />
-          <Value title="Motion zones" sub="Front door 2 · Driveway 1" value="Edit" to="/zones" />
+          <Value title="Motion zones" sub={s.hubPaired ? 'Draw where motion counts, per camera' : 'Front door 2 · Driveway 1'} value="Edit" to="/zones" />
           <Value title="Quiet hours" sub="Indoor cams pause when you are home" value="7 AM – 6 PM" />
         </Section>
 
         <Section label="RECORDING">
           <Value title="Home hub" sub="Live view works without it" value={!s.hubPaired ? 'Set up' : s.hubReachable ? 'Connected' : 'Not reachable'} to="/add/hub" />
+          {s.hubPaired ? <Toggle title="Record continuously" sub="Events only get clips while this is on" field="hubRecording" /> : null}
           <Value
             title="Keep clips for"
             sub="Oldest clips delete first"
             value={`${s.keepDays} days`}
-            onClick={() => setState({ keepDays: cycle([7, 14, 30], s.keepDays) })}
+            onClick={() => saveSetting({ keepDays: cycle([7, 14, 30], s.keepDays) })}
           />
         </Section>
 

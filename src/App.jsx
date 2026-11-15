@@ -28,9 +28,9 @@ function screenFor(path, params) {
     case 'cameras':
       return <Cameras scenario={scenario} />;
     case 'events':
-      return b === 'clip' ? <Clip /> : <Events />;
+      return b === 'clip' ? <Clip key={parts[2] || 'sample'} eventId={parts[2]} /> : <Events />;
     case 'zones':
-      return <Zones />;
+      return <Zones key={b || 'pick'} camId={b} />;
     case 'settings':
       return <Settings />;
     case 'devices':

@@ -277,7 +277,7 @@ export function EventRow({ time, tone, label, meta }) {
 }
 
 /** Clip row: thumbnail, title, meta, then a time or badge. */
-export function ClipRow({ title, meta, time, badge, to, play = true }) {
+export function ClipRow({ title, meta, time, badge, to, thumb, play = true }) {
   const inner = (
     <>
       <span
@@ -293,9 +293,20 @@ export function ClipRow({ title, meta, time, badge, to, play = true }) {
           alignItems: 'center',
           justifyContent: 'center',
           color: 'var(--text-muted)',
+          position: 'relative',
+          overflow: 'hidden',
         }}
       >
-        {play ? <PlayIcon size={16} /> : null}
+        {thumb ? (
+          <img
+            src={thumb}
+            alt=""
+            loading="lazy"
+            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+          />
+        ) : null}
+        {play ? <span style={{ position: 'relative', display: 'flex', color: thumb ? 'var(--text-on-dark)' : undefined }}><PlayIcon size={16} /></span> : null}
       </span>
       <span style={{ flexGrow: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-strong)' }}>{title}</span>

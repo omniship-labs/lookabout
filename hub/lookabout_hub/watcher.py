@@ -92,7 +92,10 @@ class VideoWorker(Worker):
                    "-i", source + ("?video=h264" + ("&audio" if self.with_sound else "") if record else "?video")]
         if record:
             folder = self.hub.clips.camera_dir(camera["id"])
-            command += ["-map", "0", "-c", "copy", "-f", "segment", "-segment_time", str(SEGMENT_SECONDS),
+            # flush_packets: a quiet scene is so few bytes that ffmpeg would otherwise hold
+            # them back for most of a minute, and a clip cut meanwhile finds an empty file.
+            command += ["-map", "0", "-c", "copy", "-f", "segment",
+                        "-segment_format_options", "flush_packets=1", "-segment_time", str(SEGMENT_SECONDS),
                         "-segment_format", "matroska", "-reset_timestamps", "1", "-strftime", "1",
                         os.path.join(folder, SEGMENT_NAME + ".mkv")]
         if motion:

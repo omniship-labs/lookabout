@@ -84,6 +84,12 @@ export const hubFrame = async (hub, camId) =>
 export const hubTestCamera = async (hub, camera) =>
   (await request(hub.address, '/api/cameras/test', { method: 'POST', token: hub.token, body: camera })).blob();
 
+/** Address of a clip (.mp4) or its thumbnail (.jpg), usable as a <video> or <img> source. */
+export const hubClipUrl = (hub, name) => `${hub.address}/api/clips/${name}?token=${encodeURIComponent(hub.token)}`;
+
+/** The clip file itself, for saving or sharing. */
+export const hubClipFile = async (hub, name) => (await request(hub.address, `/api/clips/${name}`, { token: hub.token })).blob();
+
 /** Address of a camera's MJPEG stream, usable as an <img> source. */
 export const hubMjpegUrl = (hub, camId) =>
   `${hub.address}/api/cameras/${camId}/stream.mjpeg?token=${encodeURIComponent(hub.token)}`;
@@ -140,7 +146,7 @@ export function viewerCamera(c) {
     kind: c.kind,
     status: c.status === 'offline' ? 'offline' : 'online',
     sinceMs: c.since * 1000,
-    motion: false,
+    motion: !!c.motion,
     hub: true,
   };
 }
@@ -163,6 +169,10 @@ export function viewerEvent(e) {
   if (e.kind === 'offline') meta = e.ended ? e.detail || `Back after ${span}` : 'Still offline';
   return {
     id: `hub-${e.id}`,
+    hubId: e.id,
+    ended: !!e.ended,
+    lengthLabel: span,
+    thumb: e.thumb,
     kind: e.kind,
     cam: e.camera,
     camId: e.camera_id,

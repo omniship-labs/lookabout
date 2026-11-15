@@ -12,13 +12,13 @@ each of `firmware/esp32`, `firmware/rpi`, `ios`, `android` has its own README.
 | Raspberry Pi camera node | `firmware/rpi/` | Server tested with a stand-in video source. **Never run on a Pi.** |
 | Android app | `android/` | Builds. Start, viewer tabs and live video from a test stream checked on an emulator. |
 | iOS app | `ios/` | Sources type-check. **Never built or run** (no iOS simulator runtime on this Mac). |
-| Home hub | `hub/` | Service, pairing, camera bridge and viewer API work against a stand-in camera with the web viewer. **Never run on a Pi or as a container.** No recording or detection yet. |
+| Home hub | `hub/` | Pairing, camera bridge, recording, motion and cry detection, clips and the viewer API work against stand-in cameras with the web viewer. **Never run on a Pi or as a container.** No alerts yet. |
 
 What is real: the camera role on each platform (device camera, dim, pause),
 themes, settings, cameras added by address (ESP32 / Pi stream shows in the
 web and Android viewers), firmware packaging, Wi-Fi firmware update from the
 web page (tested against a stand-in board), and on web the home hub: pairing,
-hub cameras (WebRTC live view, snapshot), offline events, paired viewers.
+hub cameras (WebRTC live view, snapshot), events with clips (offline, motion, crying), motion zones, paired viewers.
 
 What is sample data: the nursery room and sound levels; on web the house
 cameras and events too while no hub is paired; all of it in the Android and
@@ -76,7 +76,7 @@ Ordered by what unblocks the most. Each task says what "done" means.
 
 ### B. Home hub in Docker on the Pi (the owner's next priority)
 
-B1–B4 are built in `hub/` (see its README for the routes and how to run
+B1–B7 are built in `hub/` (see its README for the routes and how to run
 it) and wired into the web app. Everything was tested against a stand-in
 MJPEG camera on one machine; nothing has met a Pi, a container runtime, a
 real RTSP camera or a USB webcam yet.
@@ -106,18 +106,27 @@ real RTSP camera or a USB webcam yet.
 - [x] **B4. Hub API for viewers.** Cameras, status, events, viewers, all
       behind the pairing key (`src/lib/hub.js`, `src/lib/store.js`). With a
       hub paired the web Cameras, live, Events and Paired devices screens
-      show the hub's data and no sample cameras. Events are "offline" only
-      until B6/B7; clips need B5.
-- [ ] **B5. Recording and clips.** Continuous recording with retention
-      ("Keep clips for"), clip export for events. Done: Events list and clip
-      player play real clips.
-- [ ] **B6. Motion detection on the hub.** Frame comparison inside the drawn
-      zones; zones saved from the Zones screen. Done: walking through a zone
-      creates an event with a clip.
-- [ ] **B7. Cry detection on the hub.** An open audio classifier (e.g.
-      YAMNet) on cameras that have sound; the 20-second rule from the spec.
-      Note the ESP32 camera has no microphone, so this needs a Pi with a
-      mic or a phone camera. Done: a played cry recording raises an event.
+      show the hub's data and no sample cameras.
+- [x] **B5. Recording and clips.** Continuous recording per camera in
+      one-minute pieces, retention by "Keep clips for" (setting synced from
+      the web Settings screen) and by free disk, a clip with a thumbnail cut
+      for each event, played / saved / deleted from the web clip screen.
+      Seen working with stand-in cameras. **Left:** watch disk use and CPU on
+      a Pi with real cameras; Share needs a browser that can share files.
+- [x] **B6. Motion detection on the hub.** Frame differencing inside the
+      zones saved from the web Zones screen (per camera, with a still from
+      the camera under them, and a sensitivity). A walking box in the "Door"
+      zone made events with clips; an empty zone stayed quiet. **Left:** tune
+      on real scenes (wind, shadows, lights, night mode), and the Zones
+      "action" (alert + record vs record only) is stored but not used until
+      alerts (B8) exist.
+- [x] **B7. Cry detection on the hub.** YAMNet through LiteRT on cameras
+      that send sound (RTSP); 20 seconds of crying make an event. A real cry
+      recording through an RTSP stand-in raised events and a dog bark did
+      not. ESP32 boards and USB webcams have no sound, so this needs an RTSP
+      camera or a Pi with a mic (a Pi mic isn't wired into the hub yet).
+      **Left:** real cameras and real crying; the "fan and white noise"
+      claim on the Settings screen is not tested.
 - [ ] **B8. Alerts.** Push to paired viewers (APNs / FCM) for cry, motion,
       camera offline. Needs developer accounts (see D).
 - [x] **B9. Hub language: Python** (owner's decision, 14 Nov 2026).
@@ -158,8 +167,7 @@ real RTSP camera or a USB webcam yet.
 
 ### E. Web app loose ends
 
-- [ ] **E1. Unwired buttons**: clip Save / Share / Delete,
-      "Sign in with Google", Status page, Try again / Connection help.
+- [ ] **E1. Unwired buttons**: "Sign in with Google", Status page, Try again / Connection help.
       Snapshot is wired for cameras added by address and for hub cameras
       (`src/lib/snapshot.js`).
 - [ ] **E2. Hub-dependent add flows.** USB on hub, RTSP and Eufy now add
@@ -325,8 +333,7 @@ G7 to G10 need the hub and G1. Building anything in the web app needs
 In order:
 
 1. Run the hub on the Pi (B1) and point it at real cameras (B2).
-2. Recording, motion and cry detection on the hub (B5–B7), which also
-   unblock the clip buttons (E1).
+2. Alerts (B8), then tune detection on real cameras.
 3. Switch GitHub Pages on, then re-run the Deploy workflow (finishes E3).
 4. Flash a real ESP32-S3 (A1–A7), then Snapshot on a real board (E8).
 5. Add `NODE_AUTH_TOKEN` to the Claude cloud environment (E7).
