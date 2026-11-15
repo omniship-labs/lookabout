@@ -25,7 +25,7 @@ npm test        # web app logic tests (node:test, no browser)
 npm run coverage  # the same, failing if coverage drops below its floor
 ```
 
-Every pull request is built by `.github/workflows/build.yml` (which also runs the hub's tests). A push to `main`
+Every pull request is checked by `.github/workflows/build.yml` (see [Tests and coverage](#tests-and-coverage)). A push to `main`
 publishes `dist` to GitHub Pages through `.github/workflows/deploy.yml` (Pages
 has to be switched on in the repo settings first).
 
@@ -87,3 +87,29 @@ Cameras → **+** → *ESP32 camera* or *Raspberry Pi camera*, enter the board's
 address, test, add. The boards serve plain http, so open the web app over
 http on your own network (`npm run dev` is fine); an https page will block
 the stream.
+
+## Tests and coverage
+
+Tests come with changes. Every pull request runs all of these, and fails if
+coverage drops below a part's floor:
+
+| Part | Tests | Run | Coverage floor |
+|---|---|---|---|
+| Web app logic | `tests/*.test.mjs` (`node:test`, no browser, no install needed) | `npm test`, or `npm run coverage` | `scripts/coverage.mjs` |
+| Home hub | `hub/tests/` | `cd hub && python3 -m coverage run -m unittest discover -s tests && python3 -m coverage report` | `hub/.coveragerc` |
+| Pi camera node | `firmware/rpi/tests/` | `cd firmware/rpi && python3 -m coverage run -m unittest discover -s tests && python3 -m coverage report` | `firmware/rpi/.coveragerc` |
+| ESP32 firmware | `firmware/esp32/qemu/test_board.py`, the firmware running in QEMU | see [`firmware/esp32/qemu/`](firmware/esp32/qemu/) | (C, not measured) |
+
+- Web logic that can run without a browser goes in `src/lib/` with no React
+  or JSX imports, and screens call it. A new `src/lib` file with no tests fails
+  the coverage check until it has tests, or is listed in `UNTESTED` in
+  `scripts/coverage.mjs` with the reason. That list only shrinks.
+- Raise a floor when tests add coverage (the web script says when it's 3+
+  points over); never lower one to get a change through.
+- Floors when they were set (15 Nov 2026): web 83/96/82 (lines, branches,
+  functions, of the files tests load), hub 70, Pi node 79 (lines and branches).
+- Not tested yet: the screens and components (JSX; checked in a browser),
+  the Android and iOS apps (no test targets), `store.js`, `flash.js` and other
+  React or browser-only parts of `src/lib`, the hub's mDNS and the ffmpeg
+  commands its workers run, and on the ESP32 the Wi-Fi radio, the USB webcam
+  and USB flashing, which need a board.

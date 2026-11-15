@@ -1,6 +1,8 @@
 # Lookabout — handover
 
-Written 13 Nov 2026, updated 14 Nov 2026 (home hub built: section B; accounts plan added: section G) and 15 Nov 2026 (G1 drafted, G2 built). Read the root `README.md` first for layout and commands;
+> **Deprecated (15 Nov 2026).** Tasks are now tracked as GitHub issues: see the epics [#7](https://github.com/omniship-labs/lookabout/issues/7) (A), [#8](https://github.com/omniship-labs/lookabout/issues/8) (B), [#9](https://github.com/omniship-labs/lookabout/issues/9) (C), [#10](https://github.com/omniship-labs/lookabout/issues/10) (D), [#11](https://github.com/omniship-labs/lookabout/issues/11) (E), [#12](https://github.com/omniship-labs/lookabout/issues/12) (F) and [#13](https://github.com/omniship-labs/lookabout/issues/13) (G). The task list and "What to pick up next" below are no longer updated; the issue links beside each task are the source of truth. The rest (state, decisions, how to run, gotchas) is a snapshot as of 14 Nov 2026.
+
+Written 13 Nov 2026, updated 14 Nov 2026 (home hub built: section B; accounts plan added: section G). Read the root `README.md` first for layout and commands;
 each of `firmware/esp32`, `firmware/rpi`, `ios`, `android` has its own README.
 
 ## Where things stand
@@ -8,7 +10,7 @@ each of `firmware/esp32`, `firmware/rpi`, `ios`, `android` has its own README.
 | Piece | Folder | State |
 |---|---|---|
 | Web app | `src/` | Builds. Main screens checked in a browser (light and dark, phone/tablet/desktop). |
-| ESP32-S3 + USB webcam firmware | `firmware/esp32/` | Compiles. Web interface, settings and updates tested in QEMU (`firmware/esp32/qemu`). **Never run on a board.** |
+| ESP32-S3 + USB webcam firmware | `firmware/esp32/` | Compiles. **Never run on a board.** |
 | Raspberry Pi camera node | `firmware/rpi/` | Server tested with a stand-in video source. **Never run on a Pi.** |
 | Android app | `android/` | Builds. Start, viewer tabs and live video from a test stream checked on an emulator. |
 | iOS app | `ios/` | Sources type-check. **Never built or run** (no iOS simulator runtime on this Mac). |
@@ -51,54 +53,51 @@ screens only.
 
 Ordered by what unblocks the most. Each task says what "done" means.
 
-### A. Prove the ESP32 path on hardware (blocks everything camera-side)
+### A. Prove the ESP32 path on hardware (blocks everything camera-side) (epic #7)
 
-- [ ] **A1. Flash the board from the web page.** `npm run dev`, open
+- [ ] **A1 (#14). Flash the board from the web page.** `npm run dev`, open
       `#/flash` in Chrome, Flash over USB. Done: board boots, opens the
       "Lookabout-Setup" Wi-Fi.
-- [ ] **A2. Wi-Fi setup.** Enter Wi-Fi details at `http://192.168.4.1`. Done:
+- [ ] **A2 (#15). Wi-Fi setup.** Enter Wi-Fi details at `http://192.168.4.1`. Done:
       serial log prints the camera address.
-- [ ] **A3. Webcam streaming.** Plug in the webcam (powered hub likely
+- [ ] **A3 (#16). Webcam streaming.** Plug in the webcam (powered hub likely
       needed). Done: `http://<address>/stream` shows video. Expect to tune
       the format list in `camera.c` (`k_formats`); the S3's USB is full-speed
       so only small MJPEG modes work, and some webcams won't.
-- [ ] **A4. Add it in the viewer** (web, then Android, then iOS). Done: live
+- [ ] **A4 (#17). Add it in the viewer** (web, then Android, then iOS). Done: live
       video in the Cameras grid.
-- [ ] **A5. Wi-Fi firmware update against the real board** from web, Android
+- [ ] **A5 (#18). Wi-Fi firmware update against the real board** from web, Android
       and iOS. Done: version changes after restart; pulling power mid-update
-      leaves the old firmware running. The board side of this (new version
-      after restart, cut-off upload, power cut mid-update, a file that isn't
-      firmware) passes in the QEMU emulator tests; still to do on a board and
-      from each app.
-- [ ] **A6. Android USB flashing.** `android/.../net/Firmware.kt` implements
+      leaves the old firmware running.
+- [ ] **A6 (#29). Android USB flashing.** `android/.../net/Firmware.kt` implements
       the ESP32 bootloader protocol from documentation and is the least
       certain code in the repo. Done: a blank board flashed from a phone.
-- [ ] **A7. mDNS discovery.** Confirm the apps list the board under "Found
+- [ ] **A7 (#19). mDNS discovery.** Confirm the apps list the board under "Found
       on your network" (`_lookabout._tcp`). Older Android versions may not
       resolve `.local` names; fall back to the IP from discovery if so.
 
-### B. Home hub in Docker on the Pi (the owner's next priority)
+### B. Home hub in Docker on the Pi (the owner's next priority) (epic #8)
 
 B1–B7 are built in `hub/` (see its README for the routes and how to run
 it) and wired into the web app. Everything was tested against a stand-in
 MJPEG camera on one machine; nothing has met a Pi, a container runtime, a
 real RTSP camera or a USB webcam yet.
 
-- [ ] **B1. Hub service skeleton.** `hub/`: Python service, `Dockerfile`
+- [ ] **B1 (#20). Hub service skeleton.** `hub/`: Python service, `Dockerfile`
       (builds go2rtc from source), `docker-compose.yml` with host networking
       and a `hub-data` volume. Serves a status page on port 8787 and
       announces `_lookabout-hub._tcp`. **Left:** `docker compose up -d
       --build` on the Pi. The full image has never been built (the session
       that wrote it could not reach Debian's package mirror; the go2rtc
       stage built). Check the mDNS announcement from another device.
-- [x] **B2. Camera bridge.** The hub runs go2rtc and registers ESP32 / Pi
+- [x] **B2 (#58). Camera bridge.** The hub runs go2rtc and registers ESP32 / Pi
       (MJPEG), RTSP and USB cameras with it; viewers get WebRTC, with MJPEG
       as the fallback and for small tiles of MJPEG cameras. Seen working: a
       stand-in board added through the hub plays in the web viewer.
       **Left:** try a real RTSP camera (sound included: the Opus path is
       untested) and a USB webcam (the hub asks for MJPEG at 1280×720, which
       not every webcam has; see `stream_url` in `hub/lookabout_hub/cameras.py`).
-- [x] **B3. Hub pairing.** The hub page makes a one-time code (5 minutes,
+- [x] **B3 (#59). Hub pairing.** The hub page makes a one-time code (5 minutes,
       with a QR of `lookabout://hub?address=…&code=…` for the native apps
       to scan later); the web viewer sends it and gets a key. The hub keeps
       a hash, the viewer keeps the key in its settings. Removing a viewer
@@ -106,79 +105,79 @@ real RTSP camera or a USB webcam yet.
       drops back to unpaired on its next request. `#/add/hub` is the real
       flow (`HubSetup` in `src/screens/Add.jsx`); the link form
       `#/add/hub?address=…&code=…` prefills it.
-- [x] **B4. Hub API for viewers.** Cameras, status, events, viewers, all
+- [x] **B4 (#60). Hub API for viewers.** Cameras, status, events, viewers, all
       behind the pairing key (`src/lib/hub.js`, `src/lib/store.js`). With a
       hub paired the web Cameras, live, Events and Paired devices screens
       show the hub's data and no sample cameras.
-- [x] **B5. Recording and clips.** Continuous recording per camera in
+- [x] **B5 (#61). Recording and clips.** Continuous recording per camera in
       one-minute pieces, retention by "Keep clips for" (setting synced from
       the web Settings screen) and by free disk, a clip with a thumbnail cut
       for each event, played / saved / deleted from the web clip screen.
       Seen working with stand-in cameras. **Left:** watch disk use and CPU on
       a Pi with real cameras; Share needs a browser that can share files.
-- [x] **B6. Motion detection on the hub.** Frame differencing inside the
+- [x] **B6 (#62). Motion detection on the hub.** Frame differencing inside the
       zones saved from the web Zones screen (per camera, with a still from
       the camera under them, and a sensitivity). A walking box in the "Door"
       zone made events with clips; an empty zone stayed quiet. **Left:** tune
       on real scenes (wind, shadows, lights, night mode), and the Zones
       "action" (alert + record vs record only) is stored but not used until
       alerts (B8) exist.
-- [x] **B7. Cry detection on the hub.** YAMNet through LiteRT on cameras
+- [x] **B7 (#63). Cry detection on the hub.** YAMNet through LiteRT on cameras
       that send sound (RTSP); 20 seconds of crying make an event. A real cry
       recording through an RTSP stand-in raised events and a dog bark did
       not. ESP32 boards and USB webcams have no sound, so this needs an RTSP
       camera or a Pi with a mic (a Pi mic isn't wired into the hub yet).
       **Left:** real cameras and real crying; the "fan and white noise"
       claim on the Settings screen is not tested.
-- [ ] **B8. Alerts.** Push to paired viewers (APNs / FCM) for cry, motion,
+- [ ] **B8 (#22). Alerts.** Push to paired viewers (APNs / FCM) for cry, motion,
       camera offline. Needs developer accounts (see D).
-- [x] **B9. Hub language: Python** (owner's decision, 14 Nov 2026).
-- [ ] **B10. Hub in the Android and iOS apps.** Pairing (scan the hub
+- [x] **B9 (#64). Hub language: Python** (owner's decision, 14 Nov 2026).
+- [ ] **B10 (#23). Hub in the Android and iOS apps.** Pairing (scan the hub
       page's QR), hub cameras over WebRTC, events. Web only so far.
-- [ ] **B11. Sound from hub cameras in the viewer.** Hub video plays muted;
+- [ ] **B11 (#24). Sound from hub cameras in the viewer.** Hub video plays muted;
       there is no listen control for a hub camera yet.
 
-### C. Phone-to-phone (no hub) path
+### C. Phone-to-phone (no hub) path (epic #9)
 
-- [ ] **C1. Signalling service** for WebRTC offers/answers (tiny, stateless).
-- [ ] **C2. Real pairing**: QR + word code on the camera, scan/type on the
+- [ ] **C1 (#25). Signalling service** for WebRTC offers/answers (tiny, stateless).
+- [ ] **C2 (#26). Real pairing**: QR + word code on the camera, scan/type on the
       viewer, keys stored on device. Screens exist on web
       (`src/screens/Pairing.jsx`, `Camera.jsx`); the QR is a placeholder.
-- [ ] **C3. WebRTC streaming** camera → viewer on web, iOS, Android,
+- [ ] **C3 (#27). WebRTC streaming** camera → viewer on web, iOS, Android,
       including hold-to-talk audio back.
-- [ ] **C4. Background operation**: iOS background audio session, Android
+- [ ] **C4 (#28). Background operation**: iOS background audio session, Android
       foreground service, so a camera keeps streaming with the screen off.
 
-### D. Native apps to store quality
+### D. Native apps to store quality (epic #10)
 
-- [ ] **D1. Run the iOS app.** Install an iOS simulator runtime (Xcode →
+- [ ] **D1 (#30). Run the iOS app.** Install an iOS simulator runtime (Xcode →
       Settings → Components), `cd ios && xcodegen generate`, build, fix
       whatever only shows at runtime. Check cry detection on a real iPhone.
-- [ ] **D2. Screen parity with web**: zones, clip player, paired devices,
+- [ ] **D2 (#31). Screen parity with web**: zones, clip player, paired devices,
       pairing, lullaby state, offline/reconnecting states. Brand flows
       (Nest, Ring, Wyze, Tesla) can wait for the hub.
-- [ ] **D3. Fonts**: bundle Space Grotesk, IBM Plex Sans, IBM Plex Mono (all
+- [ ] **D3 (#32). Fonts**: bundle Space Grotesk, IBM Plex Sans, IBM Plex Mono (all
       OFL) in both apps; system fonts stand in today.
-- [ ] **D4. Android**: check in a Gradle wrapper; add a foreground service;
+- [ ] **D4 (#33). Android**: check in a Gradle wrapper; add a foreground service;
       test on a phone; light-mode pass.
-- [ ] **D5. Store setup**: Apple developer team + signing, App Store Connect
+- [ ] **D5 (#34). Store setup**: Apple developer team + signing, App Store Connect
       record, Play Console record, release keystore, privacy answers,
       screenshots. Bundle/app ID is `dev.omniship.lookabout`. Trademark
       check on the name is still open (from the design spec).
-- [ ] **D6. Review notes**: justify iOS background audio (Guideline 2.5.4)
+- [ ] **D6 (#35). Review notes**: justify iOS background audio (Guideline 2.5.4)
       and file export compliance once encryption ships.
 
-### E. Web app loose ends
+### E. Web app loose ends (epic #11)
 
-- [ ] **E1. Unwired buttons**: "Sign in with Google", Status page, Try again / Connection help.
+- [ ] **E1 (#36). Unwired buttons**: "Sign in with Google", Status page, Try again / Connection help.
       Snapshot is wired for cameras added by address and for hub cameras
       (`src/lib/snapshot.js`).
-- [ ] **E2. Hub-dependent add flows.** USB on hub, RTSP and Eufy now add
+- [ ] **E2 (#37). Hub-dependent add flows.** USB on hub, RTSP and Eufy now add
       real cameras to the hub, and ESP32 / Pi cameras go through the hub
       when one is paired. Nest, Ring, Wyze and Tesla are still sample
       screens (greyed out as "Not in the hub yet" once a hub is paired);
       each needs its own integration in the hub.
-- [ ] **E3. Deploy**: `.github/workflows/deploy.yml` builds on a push to
+- [ ] **E3 (#38). Deploy**: `.github/workflows/deploy.yml` builds on a push to
       `main` and publishes `dist` to GitHub Pages; the build uses a relative
       base so it works under `/lookabout/`. It was written here, not copied
       from `murmur` (that repo wasn't readable from the session), so compare
@@ -186,45 +185,38 @@ real RTSP camera or a USB webcam yet.
       publish once Pages is switched on (Settings → Pages → Source: GitHub
       Actions), then re-run it from the Actions tab. `npm ci` already works
       in Actions (see E6). Done: a push to `main` publishes the web app.
-- [ ] **E4. https vs plain-http boards**: a deployed https page can't show
+- [ ] **E4 (#39). https vs plain-http boards**: a deployed https page can't show
       `http://` board streams or send them updates. Goes away once streams
       come through the hub; until then document "open over http on your LAN".
       The hub itself is plain http too, so the same applies to pairing with
       it: the hub needs https (or the hub serving the web app) to fix this.
-- [ ] **E5. Design-system gaps**: Switch, Badge, Card, Input are local in
+- [ ] **E5 (#40). Design-system gaps**: Switch, Badge, Card, Input are local in
       `src/components/ui.jsx` because design-beacon 0.1.0 doesn't export
       them. Promote upstream or keep local.
-- [x] **E6. Build check on pull requests.** `.github/workflows/build.yml`
+- [x] **E6 (#65). Build check on pull requests.** `.github/workflows/build.yml`
       runs `npm ci` and `npm run build` on every PR (check name `web`). It
       went green on pull request 2, so Actions can read the design-beacon
       package. Not seen red on a broken build yet. Optional follow-up: make
       `web` a required check on `main` (Settings → Branches).
-- [ ] **E7. `npm ci` in Claude cloud sessions.** It fails with 401 because
+- [ ] **E7 (#41). `npm ci` in Claude cloud sessions.** It fails with 401 because
       the environment has no `NODE_AUTH_TOKEN`. Add one (a GitHub token with
       `read:packages`) in the environment's settings. Until then, clone the
       public `omniship-labs/design-beacon` repo and `npm install --no-save`
       from that folder; the package is plain source with no build step.
-- [ ] **E8. Snapshot on a real board.** Tested only against a stand-in
+- [ ] **E8 (#42). Snapshot on a real board.** Tested only against a stand-in
       camera. After A3, press Snapshot while the stream is playing. Done: a
       JPEG of the current frame downloads from an ESP32 and from a Pi.
-- [x] **E9. Snapshot for hub cameras.** The frame comes from the hub
+- [x] **E9 (#66). Snapshot for hub cameras.** The frame comes from the hub
       (`/api/cameras/<id>/snapshot.jpg`). Seen working with the stand-in
       camera.
 
-### G. Accounts, hub install and remote access (started 15 Nov 2026: G1 drafted, G2 built)
+### G. Accounts, hub install and remote access (planned, not started) (epic #13)
 
 Goal: "I don't want everyone to see everything." Decisions so far:
 
-- Household with roles: members are **admin** or **member**; admins see all.
-  Admins put cameras in **groups** and give members **view** or **manage** per
-  group (decided 15 Nov 2026, replacing per-camera access lists). Manage =
-  delete events and clips, edit zones, rename, share the group (view only).
-  Invite by email, active on first matching sign-in, or by an invite link.
-- The other contract questions were answered 15 Nov 2026 (sessions 30 days, 7
-  while remote; a passkey per address; 14+ character password or a passkey
-  before remote access; no email from the hub; no CORS, so Pages never calls a
-  hub; old pairing keys ended at upgrade). See the Decisions list at the end
-  of `docs/hub-auth.md`.
+- Household with roles: members are **admin** or **viewer**; each camera has
+  an access list; admins see all. Invite by email, active on first matching
+  sign-in.
 - Sign-in methods: **local accounts** (passkey or password) as the default so a
   LAN-only hub works, plus **Google and Apple** as optional providers where each
   owner brings their own keys through a guided wizard. No shared OmniShip login
@@ -242,62 +234,40 @@ Goal: "I don't want everyone to see everything." Decisions so far:
 
 Tasks, in build order:
 
-- [ ] **G1. Contract doc** `docs/hub-auth.md`: `POST /auth/login/{provider}`,
+- [ ] **G1 (#48). Contract doc** `docs/hub-auth.md`: `POST /auth/login/{provider}`,
       `GET /me`, `GET /household`, `POST /household/invites`,
       `PATCH /household/members/{id}`, `GET/PUT /admin/auth/providers`,
       `GET /cameras` (filtered by caller), stream/snapshot/clip authorisation,
       and the wizard verify endpoints
       (`POST /setup/{flow}/{step}/verify`). Done: reviewed by the owner.
-      **Drafted** as `docs/hub-auth.md` (all routes under `/api`, like the
-      hub's today). It also covers the enforcement table for every existing
-      hub route, cookies vs app tokens, media tickets replacing `?token=`,
-      CSRF/origin rules, first-admin setup and moving off pairing keys.
-      The owner answered its eight questions on 15 Nov 2026 (Decisions, at the
-      end), and Q6 became camera groups with managers. **Left:** the owner
-      reads the updated doc and signs it off.
-- [ ] **G2. Wizard component** (web): a shared step UI. Each step has a guide
+- [ ] **G2 (#49). Wizard component** (web): a shared step UI. Each step has a guide
       (numbered substeps, copy buttons, deep links), the thing to do, an
       automated check or manual confirm, a state (`todo`, `checking`,
       `passed`, `failed`), a plain-language failure reason with Retry, and
       progress saved on the hub. Later steps stay locked until the previous
       one passes. Done: used by the hub-setup flow.
-      **Built:** `src/components/Wizard.jsx` (UI, `CopyBox`) and
-      `src/lib/wizard.js` (state rules and a browser-local progress store;
-      `tests/wizard.test.mjs`, run by `npm test` and the PR check). Home hub
-      pairing (`HubSetup` in `src/screens/Add.jsx`, its checks in
-      `src/lib/hubPairing.js`, tested in `tests/hubPairing.test.mjs`) now uses it: Start the hub
-      (manual confirm) → Find the hub (checks `/api/hub`) → Pair. **Left:**
-      progress is saved in the browser, not yet on the hub: add a store on
-      `/api/setup/{flow}` once the hub has those routes (G1). The screen was
-      **never seen in a browser**: the session couldn't run `npm install`
-      (E7), so only syntax and the state tests were checked. Look at it in
-      light and dark at phone and desktop widths, including a failed check
-      (wrong address) and Change on a passed step.
-- [ ] **G3. Hub-mode sign-in and gating** (web): sign-in screen showing only
-      the providers the owner enabled; route guard (viewing needs a session;
-      Devices, Add camera and Household need admin; Zones, Rename and Delete
-      event need `manage` on that camera); one
+- [ ] **G3 (#50). Hub-mode sign-in and gating** (web): sign-in screen showing only
+      the providers the owner enabled; route guard (viewer routes need a
+      session; Zones, Devices, Add camera and Household need admin); one
       `useVisibleCameras()` hook replacing direct reads of `s.cameras` in
       `Cameras.jsx`, `Live.jsx` (`houseCam`, the `/live` nursery room, tablet
       list) and `viewer.jsx` (online count); events and clips filtered by
       visible cameras; a "No access" state for a direct `/live/<id>` link to a
       camera the user can't see. Until the hub exists, a clearly labelled
       **preview** provider signs in as sample members. It is **not** security.
-      Done: signing in as a member shows only their groups' cameras, and
-      manage actions only where they have `manage`, in light and dark, at
-      phone and desktop widths.
-- [ ] **G4. Account and Household screens** (web): Settings gets an Account
+      Done: signing in as a viewer shows only their cameras, in light and
+      dark, at phone and desktop widths.
+- [ ] **G4 (#51). Account and Household screens** (web): Settings gets an Account
       section (signed in as, role, Household, Sign out). Household lists
-      members with role pills, and the camera groups; admins make groups, open
-      a member to change role, set view or manage per group, or remove; an
-      Invite field adds a pending member. Managers get Share on their groups. Replace the
+      members with role pills; admins open a member to change role, tick
+      cameras, or remove; an Invite field adds a pending member. Replace the
       "Second phone" viewers sample in `Devices` once the hub is real.
-- [ ] **G5. Pages landing flow** (web): when not served by a hub, `Start`
+- [ ] **G5 (#52). Pages landing flow** (web): when not served by a hub, `Start`
       becomes two cards, "Flash a camera" (existing `#/flash`) and "Set up
       your hub". The hub card is the install wizard (G6) and an "Open my hub"
       field that remembers the hub URL. Document E4: live viewing happens on
       the hub's own address.
-- [ ] **G6. Hub install wizard and installer.** Pages generates a
+- [ ] **G6 (#53). Hub install wizard and installer.** Pages generates a
       `docker-compose.yml` and a one-line command from a few answers (Pi
       model, recordings location, remote access yes/no). `install.sh` (kept in
       the repo, pinned to a release URL, short and readable) checks arm64,
@@ -309,7 +279,7 @@ Tasks, in build order:
       page, with a manual confirm on Pages. Hub first run shows a one-time
       setup code; entering it creates the first admin. Done: a fresh Pi goes
       from nothing to a signed-in admin using only the wizard.
-- [ ] **G7. Remote access wizard** (hub dashboard): Cloudflare Tunnel
+- [ ] **G7 (#54). Remote access wizard** (hub dashboard): Cloudflare Tunnel
       (`cloudflared` sidecar) and Tailscale paths. Checks: domain on
       Cloudflare, tunnel connected, public URL serves a valid certificate, hub
       reaches itself from outside, and an unauthenticated request to the public
@@ -318,13 +288,13 @@ Tasks, in build order:
       path. While on, the dashboard shows an "exposed to internet" banner.
       Needs rate limiting and lockout, secure cookies, CSRF and origin checks,
       and a sign-in audit log. Video falls back to https (MSE/HLS).
-- [ ] **G8. Google sign-in wizard.** Blocker if there's no public https URL
+- [ ] **G8 (#55). Google sign-in wizard.** Blocker if there's no public https URL
       (Google rejects `.local` and private IPs as redirect URIs). Steps: show
       the redirect URL with copy, link to the Google Cloud console, paste
       client ID and secret, format check, fetch Google's discovery document,
       "Test sign-in" shows the verified email returned. Secrets are encrypted
       on the hub volume and never sent back to the browser.
-- [ ] **G9. Apple sign-in wizard.** Needs a paid Apple Developer account per
+- [ ] **G9 (#56). Apple sign-in wizard.** Needs a paid Apple Developer account per
       owner, a Services ID, Team ID, Key ID and a `.p8` key, on a real https
       domain. The hub signs the client secret itself and regenerates it before
       it expires (Apple allows at most 6 months). Checks: values parse, Apple's
@@ -332,7 +302,7 @@ Tasks, in build order:
       expiry is shown. Mark "advanced" in the UI. Also: App Store guideline 4.8
       requires Sign in with Apple (or an equivalent) in the iOS app if Google
       sign-in is offered; fold into D5/D6.
-- [ ] **G10. Setup health panel** on the hub dashboard: every wizard flow with
+- [ ] **G10 (#57). Setup health panel** on the hub dashboard: every wizard flow with
       a green or red state, re-run checks on demand, so an expired key or a
       dropped tunnel shows which step failed.
 
@@ -340,21 +310,21 @@ Dependencies: G1 to G5 can be built and checked without the hub. G6 needs B1;
 G7 to G10 need the hub and G1. Building anything in the web app needs
 `npm install` to work in the session (see E7).
 
-### F. Security (before anyone outside the house uses it)
+### F. Security (before anyone outside the house uses it) (epic #12)
 
-- [ ] **F1.** Board streams and `POST /api/update` have **no sign-in**:
+- [ ] **F1 (#43).** Board streams and `POST /api/update` have **no sign-in**:
       anyone on the LAN can watch or push firmware. Close with pairing keys.
       This is now also a **hard blocker for G7**: remote access must not be
       switchable on until the hub authorises every stream and API path per
       camera. Boards stay LAN-only; only the hub is ever exposed, and it
       proxies them.
-- [ ] **F2.** The "Lookabout-Setup" Wi-Fi is open and the Wi-Fi password is
+- [ ] **F2 (#44).** The "Lookabout-Setup" Wi-Fi is open and the Wi-Fi password is
       sent over plain http to the board. Acceptable for setup on a bench;
       revisit.
-- [ ] **F3.** Android allows cleartext traffic app-wide for LAN boards;
+- [ ] **F3 (#45).** Android allows cleartext traffic app-wide for LAN boards;
       narrow it once streams go through the hub.
-- [ ] **F4.** Signed firmware images / rollback protection for updates.
-- [ ] **F5.** The hub is plain http: anyone on the LAN can open its page
+- [ ] **F4 (#46).** Signed firmware images / rollback protection for updates.
+- [ ] **F5 (#47).** The hub is plain http: anyone on the LAN can open its page
       and pair a viewer, and keys and video requests travel unencrypted
       (the key is in the address of MJPEG streams). Camera passwords sit
       unencrypted in the hub's data volume. Needs https on the hub and a
@@ -369,10 +339,8 @@ In order:
 3. Switch GitHub Pages on, then re-run the Deploy workflow (finishes E3).
 4. Flash a real ESP32-S3 (A1–A7), then Snapshot on a real board (E8).
 5. Add `NODE_AUTH_TOKEN` to the Claude cloud environment (E7).
-6. Accounts and camera gating (section G). G1's questions are answered
-   (`docs/hub-auth.md`, waiting on sign-off) and G2 is built. Next: look at the new
-   pairing wizard in a browser, then G3 (sign-in and gating with the preview
-   provider) and G4. The hub's present pairing keys (B3) are what G replaces
+6. Accounts and camera gating (section G). Start with G1 (contract doc) and G2
+   (wizard component). The hub's present pairing keys (B3) are what G replaces
    with accounts.
 
 ## How to run each piece
@@ -381,7 +349,6 @@ In order:
 # Web
 NODE_AUTH_TOKEN=$(gh auth token) npm install
 npm run dev
-npm test                                      # web logic tests (node:test), no install needed
 
 # ESP32 firmware, then package it for the web page and both apps
 cd firmware/esp32 && pio run -e esp32-s3-uvc && cd ../..
@@ -390,7 +357,6 @@ npm run firmware:package
 # Home hub (on the Pi; then open http://<pi>:8787)
 cd hub && docker compose up -d --build
 python3 -m unittest discover -s hub/tests     # hub tests, anywhere
-(cd firmware/rpi && python3 -m unittest discover -s tests)   # Pi camera node tests, anywhere
 
 # Pi camera node (on the Pi)
 cd firmware/rpi && ./install.sh
@@ -406,30 +372,6 @@ Design states that need live data can be forced on web with `?state=`
 (`offline`, `ring`, `reconnecting`, `empty`, `battery`); see the root README.
 
 ## Things that will trip you up
-
-- **Tests come with changes.** Web logic that can run without a browser goes in
-  `src/lib/` (no React or JSX imports) with a `node:test` file in `tests/`;
-  screens call it. `npm test` runs them in plain Node, even where `npm install`
-  doesn't work, and the `web` PR check runs them too. Hub changes get cases in
-  `hub/tests/`, Pi camera node changes in `firmware/rpi/tests/`, ESP32
-  firmware changes in `firmware/esp32/qemu/test_board.py` (the firmware runs
-  in QEMU in the `esp32` PR check; Wi-Fi, the USB webcam and flashing still
-  need a board). Still without tests: the Android and
-  iOS apps (no test targets yet), `store.js`, `flash.js` and `camera.js`'s
-  device camera parts (need React or browser APIs), the hub's mDNS
-  (`discovery.py`) and the ffmpeg commands inside the hub's workers.
-- **Coverage floors keep it honest.** The PR check fails if coverage drops
-  below each part's floor. Web: `npm run coverage`, floors and the list of
-  untested `src/lib` files in `scripts/coverage.mjs`; a new `src/lib` file with
-  no tests fails the check until it has tests or is listed with a reason. Hub
-  and Pi node: `fail_under` in `hub/.coveragerc` and `firmware/rpi/.coveragerc`
-  (`python3 -m coverage run -m unittest discover -s tests && python3 -m coverage report`).
-  On 15 Nov 2026: web 84% lines / 97% branches / 83% functions of the files
-  tests load (JSX screens aren't measured), hub 71%, Pi node 80% (Python
-  figures are lines and branches together). Floors sit about a point below.
-  Raise a floor when tests add coverage (the web script says when it's 3+
-  points over); never lower one to get a change through. A component that can't be tested this way is checked in a
-  browser instead, and the handover says so until someone has.
 
 - `npm install` needs `NODE_AUTH_TOKEN` for the org's GitHub Packages registry.
 - The firmware build output is copied into `public/firmware/`, the iOS
