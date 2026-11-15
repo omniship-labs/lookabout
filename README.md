@@ -161,8 +161,10 @@ coverage drops below a part's floor:
   `scripts/coverage.mjs` with the reason. That list only shrinks.
 - Raise a floor when tests add coverage (the web script says when it's 3+
   points over); never lower one to get a change through.
-- Floors when they were set (15 Nov 2026): web 83/96/82 (lines, branches,
-  functions, of the files tests load), hub 70, Pi node 79 (lines and branches).
+- When the floors were set (15 Nov 2026), coverage was web 84% lines, 97%
+  branches, 83% functions (of the files tests load; JSX screens aren't
+  measured), hub 71% and Pi node 80% (Python counts lines and branches
+  together). Floors sit about a point below: web 83/96/82, hub 70, Pi node 79.
 - Not tested yet: the screens and components (JSX; checked in a browser),
   the Android and iOS apps (no test targets), `store.js`, `flash.js` and other
   React or browser-only parts of `src/lib`, the hub's mDNS and the ffmpeg
