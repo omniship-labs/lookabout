@@ -1,6 +1,6 @@
 # Lookabout — handover
 
-Written 13 Nov 2026, updated 14 Nov 2026 (home hub built: section B; accounts plan added: section G). Read the root `README.md` first for layout and commands;
+Written 13 Nov 2026, updated 14 Nov 2026 (home hub built: section B; accounts plan added: section G) and 15 Nov 2026 (G1 drafted, G2 built). Read the root `README.md` first for layout and commands;
 each of `firmware/esp32`, `firmware/rpi`, `ios`, `android` has its own README.
 
 ## Where things stand
@@ -208,7 +208,7 @@ real RTSP camera or a USB webcam yet.
       (`/api/cameras/<id>/snapshot.jpg`). Seen working with the stand-in
       camera.
 
-### G. Accounts, hub install and remote access (planned, not started)
+### G. Accounts, hub install and remote access (started 15 Nov 2026: G1 drafted, G2 built)
 
 Goal: "I don't want everyone to see everything." Decisions so far:
 
@@ -238,12 +238,29 @@ Tasks, in build order:
       `GET /cameras` (filtered by caller), stream/snapshot/clip authorisation,
       and the wizard verify endpoints
       (`POST /setup/{flow}/{step}/verify`). Done: reviewed by the owner.
+      **Drafted** as `docs/hub-auth.md` (all routes under `/api`, like the
+      hub's today). It also covers the enforcement table for every existing
+      hub route, cookies vs app tokens, media tickets replacing `?token=`,
+      CSRF/origin rules, first-admin setup and moving off pairing keys.
+      **Left:** the owner answers its eight questions (Q1–Q8 at the end) and
+      signs it off.
 - [ ] **G2. Wizard component** (web): a shared step UI. Each step has a guide
       (numbered substeps, copy buttons, deep links), the thing to do, an
       automated check or manual confirm, a state (`todo`, `checking`,
       `passed`, `failed`), a plain-language failure reason with Retry, and
       progress saved on the hub. Later steps stay locked until the previous
       one passes. Done: used by the hub-setup flow.
+      **Built:** `src/components/Wizard.jsx` (UI, `CopyBox`) and
+      `src/lib/wizard.js` (state rules and a browser-local progress store;
+      `tests/wizard.test.mjs`, run by `npm test` and the PR check). Home hub
+      pairing (`HubSetup` in `src/screens/Add.jsx`) now uses it: Start the hub
+      (manual confirm) → Find the hub (checks `/api/hub`) → Pair. **Left:**
+      progress is saved in the browser, not yet on the hub: add a store on
+      `/api/setup/{flow}` once the hub has those routes (G1). The screen was
+      **never seen in a browser**: the session couldn't run `npm install`
+      (E7), so only syntax and the state tests were checked. Look at it in
+      light and dark at phone and desktop widths, including a failed check
+      (wrong address) and Change on a passed step.
 - [ ] **G3. Hub-mode sign-in and gating** (web): sign-in screen showing only
       the providers the owner enabled; route guard (viewer routes need a
       session; Zones, Devices, Add camera and Household need admin); one
@@ -337,8 +354,10 @@ In order:
 3. Switch GitHub Pages on, then re-run the Deploy workflow (finishes E3).
 4. Flash a real ESP32-S3 (A1–A7), then Snapshot on a real board (E8).
 5. Add `NODE_AUTH_TOKEN` to the Claude cloud environment (E7).
-6. Accounts and camera gating (section G). Start with G1 (contract doc) and G2
-   (wizard component). The hub's present pairing keys (B3) are what G replaces
+6. Accounts and camera gating (section G). G1 is drafted (`docs/hub-auth.md`,
+   waiting on the owner's answers) and G2 is built. Next: look at the new
+   pairing wizard in a browser, then G3 (sign-in and gating with the preview
+   provider) and G4. The hub's present pairing keys (B3) are what G replaces
    with accounts.
 
 ## How to run each piece

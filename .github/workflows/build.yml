@@ -1,6 +1,6 @@
 name: Build
 
-# Checks that the web app still builds and the hub's tests pass on every pull request.
+# Checks that the web app still builds and its tests and the hub's tests pass on every pull request.
 
 on:
   pull_request:
@@ -27,6 +27,7 @@ jobs:
           # @omniship-labs/design-beacon comes from GitHub Packages.
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm run build
+      - run: npm test
 
   hub:
     runs-on: ubuntu-latest

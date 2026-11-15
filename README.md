@@ -21,6 +21,7 @@ This repo is a monorepo:
 NODE_AUTH_TOKEN=$(gh auth token) npm install   # design-beacon comes from GitHub Packages
 npm run dev
 npm run build
+npm test        # web app logic tests (node:test, no browser)
 ```
 
 Every pull request is built by `.github/workflows/build.yml` (which also runs the hub's tests). A push to `main`
