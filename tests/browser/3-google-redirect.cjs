@@ -2,8 +2,12 @@ const { chromium } = require('playwright');
 const SCR = process.env.SCR; const base = 'http://localhost:8799';
 (async () => {
   const browser = await chromium.launch();
-  const admin = JSON.parse(require('fs').readFileSync(`${SCR}/admin-state.json`, 'utf8'));
-  const token = JSON.parse(admin.origins[0].localStorage.find((x) => x.name === 'lookabout-settings').value).hub.token;
+  // Sign in as the admin script 1 made (fixed smoke-test credentials), rather than reading a token from a file.
+  const login = await fetch(base + '/api/auth/login/local?app=1', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'sam@example.com', password: 'correct horse battery' }),
+  });
+  const { token } = await login.json();
   const api = async (method, path, body) => (await fetch(base + path, { method, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }));
   let r = await api('PUT', '/api/admin/auth/providers', { public_url: 'https://hub.example.test', google: { client_id: '1234-abc.apps.googleusercontent.com', client_secret: 'GOCSPX-fake', enabled: true } });
   console.log('enable google via API:', r.status);
