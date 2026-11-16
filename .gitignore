@@ -15,3 +15,4 @@ firmware/esp32/dependencies.lock
 firmware/esp32/sdkconfig
 firmware/esp32/sdkconfig.old
 hub/web/
+tests/browser/out/

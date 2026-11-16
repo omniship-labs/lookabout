@@ -1,25 +1,22 @@
-# Browser checks against a real hub (by hand, not part of `npm test`)
+# Browser checks against a real hub (the `browser` job in `.github/workflows/build.yml`; `npm run browser` locally)
 
 These drive the built web app in Chromium (Playwright) against a real hub process,
 with a virtual authenticator for the passkey step. They are the "seen working" check
 for the sign-in, Household and Account screens. They need no go2rtc, camera or Pi.
 
 ```sh
-npm run build                                   # needs NODE_AUTH_TOKEN (#41)
-export SCR=$(mktemp -d)                         # state shared between the scripts
-cd hub && python3 -m lookabout_hub --data $SCR/data --port 8799 --web ../dist --no-mdns --name "Smoke hub" &
-cd ..                                           # then, in order, each against the same fresh hub:
-SCR=$SCR node tests/browser/1-first-admin-household.cjs   # first admin, group, invite (writes admin-state.json, invite.txt; script 3 signs in again with the same fixed smoke-test credentials)
-SCR=$SCR node tests/browser/2-passkey-and-invite.cjs      # passkey (virtual authenticator), join by invite, sign out
-node tests/browser/3-google-redirect.cjs                 # Google is gated by its wizard; an admin can try the link first (no Google account needed)
-# 4 needs a FRESH hub started with LOOKABOUT_IN_CONTAINER=1 (it makes its own first admin):
-SCR=$SCR node tests/browser/4-setup-wizards.cjs           # install helper, install check, health panel, Google and Cloudflare wizards
+npm run build                 # needs NODE_AUTH_TOKEN (#41)
+npm install --no-save playwright   # not in package.json; browsers: npx playwright install chromium
+npm run browser               # starts a fresh hub on port 8799 per script, runs 1 to 4, stops it
 ```
 
-`playwright` has to be resolvable (`npm i -D playwright`, or run where it is installed globally).
-A hub that already has an admin needs a fresh `--data` folder to run script 1 again.
+`tests/browser/run.sh` does the orchestration (and `WEB_DIR=…` picks another build folder). Screenshots and the hub log
+go to `tests/browser/out/` (`SCR=…` changes that). To run one script by hand, start a hub the same way
+(`LOOKABOUT_IN_CONTAINER=1 PYTHONPATH=hub python3 -m lookabout_hub --data $SCR/data --port 8799 --web dist --no-mdns --name "Smoke hub"`)
+and run scripts 1, 2, 3 in order against one fresh hub, and 4 against another.
 
+`playwright` has to be resolvable (`npm i -D playwright`, or run where it is installed globally).
 Script 4's Google discovery step contacts accounts.google.com for real if the machine can reach it (and says so if not).
 
-What they do **not** cover: the look (they were first run with stand-in design tokens), a real Google or
-Apple sign-in, a hardware passkey, Safari or Firefox, or video.
+What they do **not** cover: the look (CI builds with the real design package, but nothing asserts how it looks; they were
+first written against stand-in tokens), a real Google or Apple sign-in, a hardware passkey, Safari or Firefox, or video.

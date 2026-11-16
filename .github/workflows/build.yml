@@ -1,8 +1,9 @@
 name: Build
 
 # Checks on every pull request: the web app builds, the web, hub and Pi camera
-# node tests pass without coverage falling below each part's floor, and the
-# ESP32 firmware builds and passes its tests in the QEMU emulator.
+# node tests pass without coverage falling below each part's floor, the web app
+# is driven in Chromium against a real hub process, and the ESP32 firmware
+# builds and passes its tests in the QEMU emulator.
 
 on:
   pull_request:
@@ -31,6 +32,38 @@ jobs:
       - run: npm run build
       # Runs the tests and fails if web coverage drops below its floor (scripts/coverage.mjs).
       - run: npm run coverage
+
+  # The built web app, in Chromium, against a real hub process (tests/browser): first admin, household,
+  # invites, passkeys (a virtual authenticator), the setup wizards. No camera, go2rtc or Pi needed.
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: npm run build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install numpy cryptography
+      # Playwright is only for these checks, so it is not in package.json.
+      - run: npm install --no-save --no-package-lock playwright@1.63.0
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: npx playwright install --with-deps chromium
+      - run: npm run browser
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-check-screenshots
+          path: tests/browser/out
+          if-no-files-found: ignore
 
   hub:
     runs-on: ubuntu-latest
