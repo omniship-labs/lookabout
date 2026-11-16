@@ -190,5 +190,56 @@ class HubTest(HubCase):
         self.assertEqual(self.call("DELETE", "/api/household/members/nope", token=token)[0], 404)
 
 
+class WebAppTest(HubCase):
+    """The hub serves the built web app from its own address (no CORS, so it has to)."""
+
+    def setUp(self):
+        super().setUp()
+        self.web = os.path.join(self.dir.name, "web")
+        os.makedirs(os.path.join(self.web, "assets"))
+        for name, text in (("index.html", "<!doctype html><title>Lookabout</title>"), ("assets/app.js", "console.log(1)"),
+                           ("assets/app.css", "a{}"), ("assets/logo.svg", "<svg/>")):
+            with open(os.path.join(self.web, name), "w") as f:
+                f.write(text)
+        with open(os.path.join(self.dir.name, "secret.txt"), "w") as f:
+            f.write("nope")
+        self.hub.web_dir = self.web
+
+    def test_the_app_is_the_front_page_and_the_status_page_moves(self):
+        status, page, headers = self.send("GET", "/", raw=True)
+        self.assertEqual((status, headers["Content-Type"]), (200, "text/html; charset=utf-8"))
+        self.assertIn(b"<title>Lookabout</title>", page)
+        self.assertIn(b"Lookabout hub", self.send("GET", "/status", raw=True)[1])
+
+    def test_files_and_their_types(self):
+        for path, kind in (("/assets/app.js", "javascript"), ("/assets/app.css", "text/css"), ("/assets/logo.svg", "image/svg+xml"),
+                           ("/index.html", "text/html")):
+            status, _, headers = self.send("GET", path, raw=True)
+            self.assertEqual(status, 200, path)
+            self.assertIn(kind, headers["Content-Type"], path)
+            self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(self.send("GET", "/assets/", raw=True)[0], 404)
+        self.assertEqual(self.send("GET", "/assets/missing.js", raw=True)[0], 404)
+
+    def test_nothing_outside_the_folder(self):
+        for path in ("/../secret.txt", "/%2e%2e/secret.txt", "/assets/../../secret.txt", "/..%2fsecret.txt", "//etc/passwd"):
+            status, body, _ = self.send("GET", path, raw=True)
+            self.assertNotIn(b"nope", body, path)
+            self.assertIn(status, (404, 200), path)
+        link = os.path.join(self.web, "assets", "link.txt")
+        os.symlink(os.path.join(self.dir.name, "secret.txt"), link)
+        self.assertEqual(self.send("GET", "/assets/link.txt", raw=True)[0], 404)
+
+    def test_the_api_is_not_shadowed(self):
+        self.assertEqual(self.call("GET", "/api/hub")[0], 200)
+        self.assertEqual(self.call("GET", "/api/nothing")[0], 401 if not self.hub.accounts.setup_needed() else 423)
+        self.assertEqual(self.send("POST", "/", {}, raw=True)[0], 404)
+
+    def test_without_a_web_app_the_status_page_stays_at_the_root(self):
+        self.hub.web_dir = None
+        self.assertIn(b"Lookabout hub", self.send("GET", "/", raw=True)[1])
+        self.assertEqual(self.send("GET", "/assets/app.js", raw=True)[0], 404)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -13,7 +13,8 @@ services:
       LOOKABOUT_HUB_PORT: "8787"
       # LOOKABOUT_CRY_MODEL: /app/models/yamnet.tflite   # cry classifier, already in the image
     volumes:
-      - hub-data:/data                    # settings, paired viewers, recordings
+      - hub-data:/data                    # settings, accounts, recordings
+      - ./web:/app/web:ro                 # the web app (npm run hub:web); optional, the hub shows a status page without it
     # USB webcams plugged into this machine: list each one here.
     # devices:
     #   - /dev/video0:/dev/video0

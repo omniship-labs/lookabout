@@ -17,6 +17,7 @@ member, see `_route`. Streams, snapshots and clips also take a short-lived `?tic
 
 import ipaddress
 import json
+import mimetypes
 import os
 import shutil
 import socket
@@ -41,8 +42,10 @@ MAX_BODY = 256 * 1024
 class Hub:
     """The parts of the hub, bundled for the request handler."""
 
-    def __init__(self, store, pairing, bridge, monitor, name, port, data_dir, clips=None, accounts=None, federation=None):
+    def __init__(self, store, pairing, bridge, monitor, name, port, data_dir, clips=None, accounts=None, federation=None,
+                 web_dir=None):
         self.store, self.pairing, self.bridge, self.monitor = store, pairing, bridge, monitor
+        self.web_dir = web_dir if web_dir and os.path.isfile(os.path.join(web_dir, "index.html")) else None   # the built web app
         self.accounts = accounts or Accounts(store)
         self.federation = federation or Federation(self.accounts, Vault(os.path.join(data_dir, "keys")))
         self.name, self.port, self.data_dir = name, port, data_dir
@@ -319,8 +322,10 @@ def make_handler(hub):
         # --- routes -----------------------------------------------------
 
         def _route(self, method, path):
-            if method == "GET" and not path:
+            if method == "GET" and path == ["status"] or (method == "GET" and not path and not hub.web_dir):
                 return self._send(200, "text/html; charset=utf-8", PAGE.encode())
+            if method == "GET" and (not path or path[0] != "api") and hub.web_dir:
+                return self._web_file(path)
             if not path or path[0] != "api":
                 raise Reply(404, "Not found.")
             route = (method, *path[1:])
@@ -558,6 +563,21 @@ def make_handler(hub):
                     self._events(who)
                 case _:
                     raise Reply(404, "Not found.")
+
+        def _web_file(self, path):
+            """The built web app, from the hub's own address (so it needs no CORS). Never outside its folder."""
+            root = os.path.realpath(hub.web_dir)
+            target = os.path.realpath(os.path.join(root, *path)) if path else os.path.join(root, "index.html")
+            if os.path.isdir(target):
+                target = os.path.join(target, "index.html")
+            if not target.startswith(root + os.sep) or not os.path.isfile(target):
+                raise Reply(404, "Not found.")
+            kind = mimetypes.guess_type(target)[0] or "application/octet-stream"
+            if kind.startswith("text/") or kind in ("application/javascript", "application/json"):
+                kind += "; charset=utf-8"
+            with open(target, "rb") as f:
+                body = f.read()
+            self._send(200, kind, body, [("X-Content-Type-Options", "nosniff")])
 
         def _ticket_camera(self, route):
             """The camera a ?ticket= may be used for on this route: streams, snapshots and clips only."""

@@ -1,6 +1,6 @@
 import React from 'react';
 import * as sample from './sampleData.js';
-import { HubError, hubGet, hubSend, viewerCamera, viewerEvent } from './hub.js';
+import { HubError, detectOwnHub, hubGet, hubSend, ownSession, viewerCamera, viewerEvent } from './hub.js';
 import { announce, formatClock } from './hooks.js';
 
 // App state. Settings, cameras added by address and the paired hub persist
@@ -226,6 +226,14 @@ export async function addHubCamera(camera) {
 export async function removeHubEvent(hubId) {
   await hubSend(state.hub, 'DELETE', `/api/events/${hubId}`);
   setState({ hubEvents: state.hubEvents.filter((e) => e.hubId !== hubId) });
+}
+
+/** On a page the hub serves, pick up the session its cookie holds (after Google or Apple sign-in, say). */
+export async function adoptOwnSession() {
+  if (state.hub) return;
+  const own = await detectOwnHub(window.location.origin);
+  const hub = own ? await ownSession(own) : null;
+  if (hub && !state.hub) setHub(hub);
 }
 
 /** Sign out of the hub: it ends this device's session, and this device forgets the hub. */

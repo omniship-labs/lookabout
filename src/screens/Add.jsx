@@ -1,8 +1,9 @@
 import React from 'react';
 import { navigate } from '../lib/router.js';
 import { addCameras, addHubCamera, getState, refreshHub, setHub, unpairHub, useStore } from '../lib/store.js';
-import { hubGet, hubInfo, hubTestCamera, inviteFromLink, joinHub, normalizeHubAddress, pairWithHub, setUpHub, signInToHub } from '../lib/hub.js';
+import { detectOwnHub, hubGet, hubInfo, providerSignInAddress, hubTestCamera, inviteFromLink, joinHub, normalizeHubAddress, pairWithHub, setUpHub, signInToHub } from '../lib/hub.js';
 import { passwordProblem } from '../lib/access.js';
+import { signInOptions } from '../lib/household.js';
 import { passkeyAddressOk, passkeysSupported, signInWithPasskey } from '../lib/passkey.js';
 import { blockedByHttps, codeReady, findHub, freeSpace, typedAddress } from '../lib/hubPairing.js';
 import { addGroups, connectKinds, guidedFlows, nestCams, ringCams, teslaClips, wyzeCams } from '../lib/sampleData.js';
@@ -457,6 +458,8 @@ function HubPaired() {
       <Group>
         <Row><RowText title="Address" sub={s.hub.address} /></Row>
         <Row to="/cameras"><RowText title="Cameras" sub={`${s.hubCameras.length} on this hub`} /><span style={{ fontSize: 14, color: 'var(--text-muted)' }}>Open</span></Row>
+        <Row to="/account"><RowText title="Your account" sub="Password, passkeys, linked sign-ins" /><span style={{ fontSize: 14, color: 'var(--text-muted)' }}>Open</span></Row>
+        <Row to="/household"><RowText title="Household" sub="Who can see which cameras" /><span style={{ fontSize: 14, color: 'var(--text-muted)' }}>Open</span></Row>
         <Row to="/devices"><RowText title="Signed-in devices" sub={`${s.hubViewers.length} signed in`} /><span style={{ fontSize: 14, color: 'var(--text-muted)' }}>Manage</span></Row>
       </Group>
       <Spacer />
@@ -559,6 +562,22 @@ const pairSteps = [
         {values.setup || values.invite ? (
           <Field label="Your name" value={values.person || ''} maxLength={40} onChange={(e) => set({ person: e.target.value })} autoComplete="name" />
         ) : null}
+        {!values.setup && !values.code && (values.providers || []).map((p) => (
+          <Cta
+            key={p.id}
+            variant="outline"
+            onClick={async () => {
+              try {
+                // Back to the app afterwards: the hub leaves its session cookie, and the app picks it up.
+                window.location.href = await providerSignInAddress(values.base, p.id, '/#/cameras');
+              } catch (err) {
+                set({ passkeyError: err.message });
+              }
+            }}
+          >
+            {p.label}
+          </Cta>
+        ))}
         {!values.setup && !values.invite && !values.code && passkeysSupported() ? (
           <>
             <Cta
@@ -607,7 +626,7 @@ const pairSteps = [
     ready: (values) => {
       if (values.code) return codeReady(values.code); // a pairing code from a link or QR
       if (values.setup) return codeReady(values.setupCode) && !!(values.email || '').includes('@') && !passwordProblem(values.password);
-      if (values.invite) return !!inviteFromLink(values.invite) && !passwordProblem(values.password);
+      if (values.invite) return !!(inviteFromLink(values.invite) || values.invite.trim()) && !passwordProblem(values.password);
       return !!(values.email || '').includes('@') && !!values.password;
     },
     checkLabel: (values) => (values.setup ? 'Make the first admin' : values.invite ? 'Join' : 'Sign in'),
@@ -628,24 +647,48 @@ const pairSteps = [
   },
 ];
 
-export function HubSetup({ address: linkAddress, code: linkCode }) {
+export function HubSetup({ address: linkAddress, code: linkCode, invite, error }) {
   const s = useStore();
+  const [own, setOwn] = React.useState(undefined); // undefined: still asking; null: this page isn't a hub's
+  React.useEffect(() => {
+    let off = false;
+    detectOwnHub(window.location.origin).then(async (found) => {
+      if (found) {
+        // Which of Google and Apple this hub has switched on (the cookie they leave is the hub's own page's).
+        const options = await signInOptions(found.address).catch(() => ({ providers: [] }));
+        found.providers = options.providers.filter((p) => p.id === 'google' || p.id === 'apple');
+      }
+      if (!off) setOwn(found);
+    });
+    return () => {
+      off = true;
+    };
+  }, []);
   if (s.hubPaired) return <HubPaired />;
+  if (own === undefined) return null;
+  // On the hub's own page there is nothing to install or find: just sign in.
+  const steps = own ? pairSteps.filter((step) => step.id === 'pair') : pairSteps;
+  const initial = own
+    ? { base: own.address, setup: !!own.setup.setup_required, setupCode: own.setup.setup_code || '', invite: invite || '', code: linkCode, providers: own.providers || [] }
+    : { address: linkAddress, code: linkCode, invite: invite || '' };
   return (
     <FlowPage
-      title="Set up a home hub"
+      title={own ? `Sign in to ${own.info.name}` : 'Set up a home hub'}
       eyebrow="HOME HUB"
-      intro="Optional. Runs on a Raspberry Pi 4/5, home server or NAS. Brings in cameras you already own and keeps watch when your phone is away."
+      intro={own
+        ? 'This hub keeps your cameras and who may see them.'
+        : 'Optional. Runs on a Raspberry Pi 4/5, home server or NAS. Brings in cameras you already own and keeps watch when your phone is away.'}
     >
+      {error ? <Note size={13} style={{ color: 'var(--osl-danger)' }}>{error}</Note> : null}
       <Wizard
         flow="hub-pair"
-        steps={pairSteps}
+        steps={steps}
         secret={PAIR_SECRET}
-        // A link from the hub's QR (#/add/hub?address=…&code=…) fills the form in.
-        initialValues={{ address: linkAddress, code: linkCode }}
-        restart={!!linkAddress}
+        // A link from the hub's QR (#/add/hub?address=…&code=…) or an invite link fills the form in.
+        initialValues={initial}
+        restart={!!linkAddress || !!invite || !!own}
         forgetWhenDone
-        onDone={() => navigate('/add')}
+        onDone={() => navigate(own ? '/cameras' : '/add')}
       />
     </FlowPage>
   );

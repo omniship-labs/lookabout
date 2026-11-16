@@ -38,6 +38,8 @@ def main():
     parser.add_argument("--go2rtc", default=env("LOOKABOUT_GO2RTC"), help="path to the go2rtc program")
     parser.add_argument("--model", default=env("LOOKABOUT_CRY_MODEL", "/app/models/yamnet.tflite"),
                         help="YAMNet model file for cry detection")
+    parser.add_argument("--web", default=env("LOOKABOUT_WEB_DIR", "/app/web"),
+                        help="folder with the built web app (npm run hub:web); without it the hub shows its status page")
     parser.add_argument("--no-mdns", action="store_true", help="don't announce the hub on the network")
     args = parser.parse_args()
 
@@ -46,7 +48,7 @@ def main():
     bridge = Go2rtc(args.data, binary=args.go2rtc)
     monitor = Monitor(store)
     clips = Clips(args.data, store)
-    hub = Hub(store, Pairing(), bridge, monitor, args.name, args.port, args.data, clips=clips)
+    hub = Hub(store, Pairing(), bridge, monitor, args.name, args.port, args.data, clips=clips, web_dir=args.web)
     hub.classifier, hub.classifier_problem = load_classifier(args.model)
     if not hub.classifier:
         print(f"Cry detection is off: {hub.classifier_problem}.", file=sys.stderr)
@@ -70,6 +72,8 @@ def main():
         raise KeyboardInterrupt
 
     signal.signal(signal.SIGTERM, stop)
+    if hub.web_dir:
+        print(f"Serving the web app from {hub.web_dir}", flush=True)
     print(f"Lookabout hub {VERSION} \"{args.name}\" on {hub.address()} "
           f"(also http://{socket.gethostname()}.local:{args.port})", flush=True)
     try:

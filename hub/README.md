@@ -72,6 +72,20 @@ Ports used on the host: 8787 (page and API), 8555 TCP+UDP (live video).
 go2rtc's own ports (1984, 8554) listen on the machine itself only.
 Everything the hub stores is in the `hub-data` volume.
 
+## The web app
+
+The hub serves the Lookabout web app from its own address (it sends no CORS headers, so a page
+from anywhere else can't talk to it). Build it and put it next to the compose file:
+
+```sh
+npm run hub:web          # builds the web app into hub/web (needs NODE_AUTH_TOKEN, see the root README)
+docker compose up -d     # ./web is mounted read-only at /app/web
+```
+
+Open `http://<pi-address>:8787`: the app is the front page and the status page moves to `/status`.
+Without a `web` folder the status page stays at `/`. In development, `LOOKABOUT_HUB=http://<hub>:8787 npm run dev`
+proxies `/api` to a hub so the dev page and the hub share an origin.
+
 ## Run without Docker
 
 ```sh

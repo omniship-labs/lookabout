@@ -626,3 +626,11 @@ Details the first build settled (G3):
   while an admin has no passkey or linked account; both can't be off. Secrets are sealed with a key in
   `keys/vault.key` on the volume (mode 600) and never returned.
 - Passkeys count as a strong credential (Q3) for remote access.
+- **The web app comes from the hub.** The hub serves a built app from its web folder (`LOOKABOUT_WEB_DIR`, default
+  `/app/web`; `npm run hub:web` builds into `hub/web`): the app is `/`, the status page is `/status`, files can't leave
+  the folder. In the app, `detectOwnHub` finds out whether the page is served by a hub; if so it skips "install" and
+  "find", and picks up the cookie session Google or Apple sign-in leaves (`adoptOwnSession`). The hub's invite link is
+  `/#/join?invite=…`; a failed provider sign-in lands on `/#/signin?error=…&message=…`.
+- **Screens.** `#/account` (name, password, passkeys, linked sign-ins, devices, sign out) and `#/household` (admins:
+  people, invites, camera groups, grants, app pairing codes, public address, Google and Apple keys, password and passkey
+  switches; managers: share a group view-only).

@@ -132,6 +132,36 @@ export function signInErrorFromHash(hash) {
   return params.get('error') ? params.get('message') || 'That sign-in didn’t work.' : '';
 }
 
+/**
+ * Is this page served by a hub? (The hub sends no CORS headers, so the app that talks to one is
+ * the app the hub itself serves.) Resolves with { address, info, setup } or null.
+ */
+export async function detectOwnHub(origin) {
+  try {
+    const info = await hubInfo(origin);
+    if (!info || typeof info.id !== 'string' || typeof info.version !== 'string') return null;
+    let setup = {};
+    try {
+      setup = await hubSetupState(origin);
+    } catch {
+      // An older hub: nothing to set up.
+    }
+    return { address: origin, info, setup };
+  } catch {
+    return null;
+  }
+}
+
+/** The hub as the store keeps it, for a browser that already holds the hub's session cookie. Null if it doesn't. */
+export async function ownSession(own) {
+  try {
+    const me = await hubGet({ address: own.address, token: '' }, '/api/me');
+    return { address: own.address, token: '', member: me.member, id: own.info.id, name: own.info.name };
+  } catch {
+    return null;
+  }
+}
+
 /** The invite code inside a link the hub made (`…/#/join?invite=CODE`), or ''. */
 export function inviteFromLink(text) {
   const m = /[#&?]invite=([A-Za-z0-9_-]+)/.exec(text || '');
