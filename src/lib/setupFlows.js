@@ -177,11 +177,14 @@ const DEFS = {
   ],
 };
 
+/** Is this the name of one of the guides? (Not something a URL could reach on every object, like `constructor`.) */
+export const isFlow = (flow) => typeof flow === 'string' && Object.hasOwn(FLOW_TITLES, flow);
+
 const pick = (values, keys) => Object.fromEntries(keys.filter((k) => values[k] !== undefined && values[k] !== '').map((k) => [k, values[k]]));
 
 /** Steps for the Wizard component. `plans` is the hub's plan per step id: [{ host, sends }]. */
 export function stepsFor(flow, api, plans = {}) {
-  return (DEFS[flow] || []).map((def) => {
+  return (isFlow(flow) ? DEFS[flow] : []).map((def) => {
     const keys = (def.fields || []).map((f) => f.key);
     const required = (def.fields || []).filter((f) => f.required).map((f) => f.key);
     return {

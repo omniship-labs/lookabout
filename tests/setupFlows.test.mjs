@@ -75,7 +75,7 @@ test('a step is ready when its required fields are filled', () => {
 test('the redirect address uses the public address typed so far', () => {
   const steps = flows.stepsFor('google', { verify: async () => ({}), confirm: async () => ({}) });
   assert.equal(steps[1].copy({ public_url: 'https://hub.example.com/' })[0].text, 'https://hub.example.com/api/auth/callback/google');
-  assert.match(steps[1].copy({})[0].text, /hub\.example\.com\/api\/auth\/callback\/google/);
+  assert.equal(steps[1].copy({})[0].text, 'https://hub.example.com/api/auth/callback/google');
   const apple = flows.stepsFor('apple', { verify: async () => ({}), confirm: async () => ({}) }).find((s) => s.id === 'identifiers');
   assert.equal(apple.copy({ public_url: 'https://h.example.org' })[0].text, 'https://h.example.org/api/auth/callback/apple');
 });
@@ -92,6 +92,13 @@ test('what the hub says about a flow is what the wizard restores', () => {
   assert.deepEqual(progress.values, { public_url: 'https://hub.example.com' });
   assert.equal(store.save(), undefined);
   assert.equal(store.clear(), undefined);
+});
+
+test('only the guides’ own names are guides, whatever the address says', () => {
+  for (const name of ['hub-install', 'google', 'apple', 'remote-cloudflare', 'remote-tailscale']) assert.equal(flows.isFlow(name), true, name);
+  for (const name of ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'remote', '', undefined, null, 5]) assert.equal(flows.isFlow(name), false, String(name));
+  assert.deepEqual(flows.stepsFor('constructor', { verify: async () => ({}), confirm: async () => ({}) }), []);
+  assert.deepEqual(flows.stepsFor('__proto__', {}), []);
 });
 
 test('plans are attached to steps', () => {

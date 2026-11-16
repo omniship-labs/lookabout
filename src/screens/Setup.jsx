@@ -5,7 +5,7 @@ import { useStore } from '../lib/store.js';
 import { detectOwnHub } from '../lib/hub.js';
 import { saveProviders } from '../lib/household.js';
 import {
-  FLOW_LIST, FLOW_TITLES, HEALTH_LABEL, confirmStep, getFlow, getHealth, getPlan, healthLine, healthLink, hubProgress, stepsFor, turnOffRemote,
+  FLOW_LIST, FLOW_TITLES, HEALTH_LABEL, confirmStep, getFlow, getHealth, getPlan, healthLine, healthLink, hubProgress, isFlow, stepsFor, turnOffRemote,
   verifyStep, worstFirst,
 } from '../lib/setupFlows.js';
 import { DEFAULT_HUB_NAME, DEFAULT_PORT, copyCommand, hubNameProblem, hubUrl, installCommand, portProblem, badUsb } from '../lib/hubInstall.js';
@@ -143,7 +143,7 @@ export function SetupFlow({ flow }) {
   const [loaded, setLoaded] = React.useState(null);
   const [problem, setProblem] = React.useState('');
   React.useEffect(() => {
-    if (!hub || !FLOW_TITLES[flow]) return undefined;
+    if (!hub || !isFlow(flow)) return undefined;
     let off = false;
     (async () => {
       try {
@@ -175,7 +175,7 @@ export function SetupFlow({ flow }) {
     // The provider wizards end by switching the sign-in on (the hub only allows it now that they have passed).
     if (flow === 'google' || flow === 'apple') {
       try {
-        await saveProviders(hub, { [flow]: { enabled: true } });
+        await saveProviders(hub, flow === 'google' ? { google: { enabled: true } } : { apple: { enabled: true } });
         announce(`${FLOW_TITLES[flow]} is on`);
       } catch (err) {
         setProblem(err.message);
@@ -185,7 +185,7 @@ export function SetupFlow({ flow }) {
     navigate('/setup');
   };
 
-  if (!FLOW_TITLES[flow]) return <Page><BackBar to="/setup" title="Setup" /><Note size={13}>There is no such guide.</Note></Page>;
+  if (!isFlow(flow)) return <Page><BackBar to="/setup" title="Setup" /><Note size={13}>There is no such guide.</Note></Page>;
   if (loading) return null;
   if (!hub) {
     return (
