@@ -57,6 +57,7 @@ class Net:
     def tls_expires(self, host, port=443):
         """When the certificate at host:port runs out, after checking it is valid for that name. Raises OSError/SSLError."""
         context = ssl.create_default_context()
+        context.minimum_version = ssl.TLSVersion.TLSv1_2     # never an old protocol, whatever the machine's defaults
         with socket.create_connection((host, port), timeout=8) as raw, context.wrap_socket(raw, server_hostname=host) as tls:
             return ssl.cert_time_to_seconds(tls.getpeercert()["notAfter"])
 

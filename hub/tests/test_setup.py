@@ -499,12 +499,30 @@ class HealthTest(SetupCase):
         self.hub.federation.update({"google": {"client_id": CLIENT_ID, "client_secret": "s"}})
         by = {c["id"]: c for c in self.call("GET", "/api/admin/health", token=self.admin)[1]["checks"]}
         self.assertEqual(by["vault"]["state"], "ok")
-        os.chmod(os.path.join(self.dir.name, "keys", "vault.key"), 0o644)
+        os.chmod(os.path.join(self.dir.name, "keys", "vault.key"), 0o640)      # looser than 600, still not world-readable
         by = {c["id"]: c for c in self.call("GET", "/api/admin/health", token=self.admin)[1]["checks"]}
         self.assertEqual(by["vault"]["state"], "warn")
 
 
 class NetTest(unittest.TestCase):
+    def test_the_tls_check_refuses_old_protocols(self):
+        seen = {}
+
+        class Context:
+            def wrap_socket(self, raw, server_hostname=None):
+                raise ssl.SSLError("stop here")
+
+        def fake_default_context():
+            context = Context()
+            seen["context"] = context
+            return context
+
+        with mock.patch("ssl.create_default_context", fake_default_context), mock.patch("socket.create_connection") as connect:
+            connect.return_value.__enter__.return_value = object()
+            with self.assertRaises(ssl.SSLError):
+                Net(None).tls_expires("hub.example.com")
+        self.assertEqual(seen["context"].minimum_version, ssl.TLSVersion.TLSv1_2)
+
     def test_hostnames(self):
         for good in ("hub.example.com", "a.b.example.org"):
             self.assertTrue(setup_module._is_public_host(good), good)
