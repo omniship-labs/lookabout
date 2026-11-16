@@ -5,6 +5,6 @@ branch = True
 source = lookabout_hub
 
 [report]
-fail_under = 70
+fail_under = 84
 show_missing = True
 skip_covered = False

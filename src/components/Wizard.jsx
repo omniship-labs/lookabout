@@ -1,8 +1,8 @@
 import React from 'react';
 import { announce } from '../lib/hooks.js';
 import { activeIndex, finishCheck, finishesFlow, localProgress, reopen, restore, runCheck, setValues, startCheck } from '../lib/wizard.js';
-import { Bar, Cta, Eyebrow, Note, Pill, cardStyle, display, mono } from './ui.jsx';
-import { CheckIcon, LockIcon, SpinnerIcon, WarningIcon } from './icons.jsx';
+import { Cta, Note, display, mono } from './ui.jsx';
+import { CheckIcon, ChevronDownIcon, WarningIcon } from './icons.jsx';
 
 // Shared step UI for setup flows (issue #49): hub pairing today; hub
 // install, remote access, Google and Apple sign-in next (issues #53–#56).
@@ -11,7 +11,8 @@ import { CheckIcon, LockIcon, SpinnerIcon, WarningIcon } from './icons.jsx';
 //
 // A step:
 //   id, title
-//   guide     numbered substeps; each a string, or an array where nested arrays are bold
+//   guide     what to do: one paragraph, or (for several actions in order) a short numbered list; each a string,
+//             or an array where nested arrays are bold
 //   copy      [{ label, text }]   boxes with a Copy button (commands, redirect URLs)
 //   links     [{ label, href }]   deep links, opened in a new tab
 //             (guide, copy and links can also be (values) => the same, for addresses typed earlier)
@@ -20,7 +21,8 @@ import { CheckIcon, LockIcon, SpinnerIcon, WarningIcon } from './icons.jsx';
 //   check     async (ctx) => summary | { summary, values }
 //             Throw an Error whose message says, for the person, what went wrong.
 //             Leave out for a manual step: the button then just confirms.
-//   checkLabel, checkingLabel, confirmLabel
+//   checkLabel, checkingLabel, confirmLabel   (checkLabel can also be (values) => text)
+//   plan      [{ host, sends }]   who the check contacts and what it sends, shown before it runs
 //   note      small print under the button
 //
 // ctx is { values, set(patch) }. Values are shared across the flow's steps.
@@ -84,68 +86,89 @@ export function Wizard({ flow, steps, initialValues, secret, store: givenStore, 
 
   const done = current === steps.length;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <Eyebrow>{done ? 'ALL STEPS DONE' : `STEP ${current + 1} OF ${steps.length}`}</Eyebrow>
-        <Bar value={Math.round((current / steps.length) * 100)} tone={done ? 'success' : 'strong'} />
-      </div>
-      <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {steps.map((step, i) => (
-          <li key={step.id}>
-            <StepCard
-              step={step}
-              number={i + 1}
-              status={progress.steps[step.id]}
-              locked={i > current}
-              previous={i > 0 ? steps[i - 1].title : ''}
-              values={progress.values}
-              set={set}
-              headingRef={(el) => {
-                headings.current[step.id] = el;
-              }}
-              onCheck={() => run(step, i)}
-              onChange={() => setProgress((p) => reopen(steps, p, step.id))}
-            />
-          </li>
-        ))}
-      </ol>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+      {steps.length > 1 ? <Progress current={current} total={steps.length} done={done} /> : null}
+      {current > 0 ? <FinishedSteps steps={steps.slice(0, current)} progress={progress} onChange={(id) => setProgress((p) => reopen(steps, p, id))} /> : null}
+      {!done ? (
+        <StepBody
+          key={steps[current].id}
+          step={steps[current]}
+          status={progress.steps[steps[current].id]}
+          values={progress.values}
+          set={set}
+          headingRef={(el) => {
+            headings.current[steps[current].id] = el;
+          }}
+          onCheck={() => run(steps[current], current)}
+          single={steps.length === 1}
+        />
+      ) : (
+        <p style={{ margin: 0, fontSize: 16, color: 'var(--text-strong)' }}>That’s everything.</p>
+      )}
     </div>
   );
 }
 
-const badgeBase = {
-  flexShrink: 0,
-  width: 28,
-  height: 28,
-  boxSizing: 'border-box',
-  borderRadius: 'var(--radius-pill)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  ...mono(12),
-  letterSpacing: 0,
-};
-
-function Badge({ state, locked, number }) {
-  if (state === 'passed') {
-    return <span style={{ ...badgeBase, background: 'var(--osl-success)', color: 'var(--osl-ink)' }}><CheckIcon size={16} strokeWidth={3} /></span>;
-  }
-  if (state === 'checking') return <span style={badgeBase}><SpinnerIcon size={24} /></span>;
-  if (state === 'failed') {
-    return <span style={{ ...badgeBase, border: '1.5px solid var(--osl-danger)', color: 'var(--osl-danger)' }}><WarningIcon size={15} /></span>;
-  }
-  if (locked) {
-    return <span style={{ ...badgeBase, border: '1.5px solid var(--border-strong)', color: 'var(--text-muted)' }}><LockIcon size={14} /></span>;
-  }
-  return <span style={{ ...badgeBase, background: 'var(--surface-inverse)', color: 'var(--text-on-dark)' }}>{number}</span>;
+/** Where you are: one short segment per step, and a plain line of words. */
+function Progress({ current, total, done }) {
+  const label = done ? 'All steps done' : `Step ${current + 1} of ${total}`;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div role="img" aria-label={label} style={{ display: 'flex', gap: 4 }}>
+        {Array.from({ length: total }, (_, i) => (
+          <span
+            key={i}
+            style={{
+              flex: 1,
+              height: 4,
+              borderRadius: 'var(--radius-pill)',
+              background: i < current || done ? 'var(--text-strong)' : i === current ? 'color-mix(in srgb, var(--text-strong) 40%, transparent)' : 'var(--border)',
+              transition: 'background var(--dur-base, 200ms) var(--ease-out, ease-out)',
+            }}
+          />
+        ))}
+      </div>
+      <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{label}</span>
+    </div>
+  );
 }
 
-const stateLabel = { passed: 'DONE', checking: 'CHECKING', failed: 'NOT YET' };
+/** What is already done, folded away until asked for. */
+function FinishedSteps({ steps, progress, onChange }) {
+  return (
+    <details className="lk-fold">
+      <summary
+        className="lk-sum"
+        style={{ listStyle: 'none', display: 'flex', alignItems: 'center', gap: 8, minHeight: 44, cursor: 'pointer', fontSize: 14, fontWeight: 600, color: 'var(--text-strong)' }}
+      >
+        <span style={{ color: 'var(--osl-success)', display: 'flex' }}><CheckIcon size={16} strokeWidth={2.5} /></span>
+        {steps.length} step{steps.length === 1 ? '' : 's'} done
+        <span style={{ color: 'var(--text-muted)', display: 'flex', marginLeft: 'auto' }}><ChevronDownIcon size={16} /></span>
+      </summary>
+      <ul style={{ listStyle: 'none', margin: 0, padding: '2px 0 6px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {steps.map((step) => {
+          const status = progress.steps[step.id];
+          return (
+            <li key={step.id} style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+              <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flexGrow: 1 }}>
+                <span style={{ fontSize: 14, color: 'var(--text-strong)' }}>{step.title}</span>
+                {status && status.summary ? <span style={{ fontSize: 13, color: 'var(--text-muted)', wordBreak: 'break-word' }}>{status.summary}</span> : null}
+              </span>
+              <button type="button" onClick={() => onChange(step.id)} style={linkButton}>
+                Change<span className="lk-sr"> {step.title}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </details>
+  );
+}
 
-function StepCard({ step, number, status, locked, previous, values, set, headingRef, onCheck, onChange }) {
+/** The step to work on: no box, no badge, just what to do. */
+function StepBody({ step, status, values, set, headingRef, onCheck, single }) {
   const id = React.useId();
   const state = status?.state || 'todo';
-  const open = !locked && state !== 'passed';
   const checking = state === 'checking';
   const ready = step.ready ? step.ready(values) : true;
   const manual = !step.check;
@@ -159,64 +182,36 @@ function StepCard({ step, number, status, locked, previous, values, set, heading
       ? 'Try again'
       : manual
         ? step.confirmLabel || 'I’ve done this'
-        : step.checkLabel || 'Check';
-
+        : pick(step.checkLabel) || 'Check';
   return (
-    <section
-      aria-labelledby={id}
-      style={{
-        ...cardStyle,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 14,
-        padding: 16,
-        opacity: locked ? 0.6 : 1,
-        borderColor: state === 'failed' ? 'var(--osl-danger)' : undefined,
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <Badge state={state} locked={locked} number={number} />
-        <h2 id={id} ref={headingRef} tabIndex={-1} style={display(17, { flexGrow: 1, minWidth: 0, lineHeight: 1.25, outline: 'none' })}>
-          <span className="lk-sr">Step {number}: </span>
-          {step.title}
-        </h2>
-        {stateLabel[state] ? (
-          <Pill small tone={state === 'passed' ? 'success' : state === 'failed' ? 'caution' : 'outline'}>{stateLabel[state]}</Pill>
-        ) : null}
-      </div>
-
-      {locked ? <Note size={13}>Finish “{previous}” first.</Note> : null}
-
-      {state === 'passed' ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Note size={13} style={{ flexGrow: 1, minWidth: 0 }}>{status.summary || 'Done.'}</Note>
-          <button type="button" onClick={onChange} style={linkButton}>
-            Change<span className="lk-sr"> {step.title}</span>
-          </button>
+    <section aria-labelledby={id} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* A flow of one step already has its title on the page: keep the heading for screen readers only. */}
+      <h2 id={id} ref={headingRef} tabIndex={-1} className={single ? 'lk-sr' : undefined} style={single ? undefined : display(24, { lineHeight: 1.2, outline: 'none' })}>{step.title}</h2>
+      {guide ? <Guide items={guide} /> : null}
+      {copies.map((c) => <CopyBox key={c.label} label={c.label} text={c.text} />)}
+      {links && links.length ? (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px' }}>
+          {links.map((l) => (
+            <a key={l.href} href={l.href} target="_blank" rel="noopener noreferrer" style={{ fontSize: 14, fontWeight: 600, minHeight: 32, display: 'inline-flex', alignItems: 'center', color: 'var(--text-strong)' }}>
+              {l.label} ↗
+            </a>
+          ))}
         </div>
       ) : null}
-
-      {open ? (
-        <>
-          {guide ? <Guide items={guide} /> : null}
-          {copies.map((c) => <CopyBox key={c.label} label={c.label} text={c.text} />)}
-          {links && links.length ? (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px' }}>
-              {links.map((l) => (
-                <a key={l.href} href={l.href} target="_blank" rel="noopener noreferrer" style={{ fontSize: 14, fontWeight: 600, minHeight: 32, display: 'inline-flex', alignItems: 'center' }}>
-                  {l.label} ↗
-                </a>
-              ))}
-            </div>
-          ) : null}
-          {step.body ? <fieldset disabled={checking} style={fieldset}>{step.body({ values, set })}</fieldset> : null}
-          {state === 'failed' ? (
-            <p role="alert" style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: 'var(--osl-danger)' }}>{status.reason}</p>
-          ) : null}
-          <Cta disabled={checking || !ready} onClick={onCheck}>{label}</Cta>
-          {step.note ? <Note center>{step.note}</Note> : null}
-        </>
+      {step.body ? <fieldset disabled={checking} style={fieldset}>{step.body({ values, set })}</fieldset> : null}
+      {(step.plan || []).map((p) => (
+        <span key={p.host} style={{ fontSize: 13, lineHeight: 1.5, color: 'var(--text-muted)' }}>
+          Contacts <strong style={{ color: 'var(--text-body)', fontWeight: 600 }}>{p.host}</strong> · sends {p.sends.charAt(0).toLowerCase() + p.sends.slice(1)}
+        </span>
+      ))}
+      {state === 'failed' ? (
+        <p role="alert" style={{ margin: 0, display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 14, lineHeight: 1.5, color: 'var(--osl-danger)' }}>
+          <span style={{ display: 'flex', marginTop: 2 }}><WarningIcon size={16} /></span>
+          {status.reason}
+        </p>
       ) : null}
+      <Cta disabled={checking || !ready} onClick={onCheck}>{label}</Cta>
+      {step.note ? <Note center>{step.note}</Note> : null}
     </section>
   );
 }
@@ -228,20 +223,30 @@ const linkButton = {
   padding: '0 4px',
   border: 0,
   background: 'transparent',
-  font: '600 14px var(--font-sans)',
-  color: 'var(--lk-link)',
+  font: '500 14px var(--font-sans)',
+  color: 'var(--text-muted)',
+  textDecoration: 'underline',
+  textUnderlineOffset: 3,
   flexShrink: 0,
 };
 
-/** Numbered substeps inside a step. */
+const bodyText = { margin: 0, fontSize: 16, lineHeight: 1.55, color: 'var(--text-body)' };
+
+function renderPart(item) {
+  return Array.isArray(item)
+    ? item.map((part, j) => (Array.isArray(part) ? <strong key={j} style={{ color: 'var(--text-strong)', fontWeight: 600 }}>{part[0]}</strong> : part))
+    : item;
+}
+
+/** What to do. One thing is a sentence; several in order are a short numbered list. */
 function Guide({ items }) {
+  if (items.length === 1) return <p style={bodyText}>{renderPart(items[0])}</p>;
   return (
-    <ol style={{ margin: 0, paddingLeft: 22, display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
       {items.map((item, i) => (
-        <li key={i} style={{ fontSize: 14, lineHeight: 1.5, color: 'var(--text-body)' }}>
-          {Array.isArray(item)
-            ? item.map((part, j) => (Array.isArray(part) ? <strong key={j} style={{ color: 'var(--text-strong)' }}>{part[0]}</strong> : part))
-            : item}
+        <li key={i} style={{ display: 'grid', gridTemplateColumns: '22px 1fr', gap: 8, ...bodyText }}>
+          <span aria-hidden="true" style={{ color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>{i + 1}</span>
+          <span>{renderPart(item)}</span>
         </li>
       ))}
     </ol>
@@ -279,36 +284,16 @@ export function CopyBox({ label, text }) {
   };
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
-      <Eyebrow>{label}</Eyebrow>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '4px 4px 4px 14px',
-          borderRadius: 'var(--radius-md)',
-          background: 'var(--surface-sunken)',
-          border: '1px solid var(--border)',
-        }}
-      >
-        <code ref={box} style={{ ...mono(12), letterSpacing: 0, lineHeight: 1.6, color: 'var(--text-body)', flexGrow: 1, minWidth: 0, overflowX: 'auto', whiteSpace: 'pre' }}>
+      <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{label}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 6px 6px 14px', borderRadius: 'var(--radius-md)', background: 'var(--surface-sunken)' }}>
+        <code ref={box} style={{ ...mono(13), letterSpacing: 0, lineHeight: 1.6, color: 'var(--text-strong)', flexGrow: 1, minWidth: 0, overflowX: 'auto', whiteSpace: 'pre' }}>
           {text}
         </code>
         <button
           type="button"
           onClick={copy}
           aria-label={`Copy ${label}`}
-          style={{
-            flexShrink: 0,
-            minWidth: 72,
-            height: 40,
-            padding: '0 12px',
-            borderRadius: 'var(--radius-sm)',
-            border: '1px solid var(--border-strong)',
-            background: 'var(--surface-card)',
-            font: '600 13px var(--font-sans)',
-            color: 'var(--text-strong)',
-          }}
+          style={{ flexShrink: 0, minWidth: 64, height: 36, padding: '0 12px', borderRadius: 'var(--radius-sm)', border: 0, background: 'var(--surface-card)', font: '600 13px var(--font-sans)', color: 'var(--text-strong)' }}
         >
           {copied || 'Copy'}
         </button>

@@ -12,9 +12,11 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "hub:web": "vite build --outDir hub/web --emptyOutDir",
     "firmware:package": "node scripts/package-firmware.mjs",
     "test": "node --test 'tests/**/*.test.mjs'",
-    "coverage": "node scripts/coverage.mjs"
+    "coverage": "node scripts/coverage.mjs",
+    "browser": "bash tests/browser/run.sh"
   },
   "dependencies": {
     "@omniship-labs/design-beacon": "^0.1.0",

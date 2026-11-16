@@ -29,13 +29,36 @@ docker compose up -d --build
 ```
 
 The first build takes several minutes on a Pi (it compiles go2rtc). Then open
-`http://<pi-address>:8787`. That page shows what the hub is doing and makes
-pairing codes.
+`http://<pi-address>:8787` from the home network. A new hub shows a **setup
+code** there (and prints it in `docker compose logs hub`). In Lookabout choose
+Home hub, enter the hub's address and the code, and make the first admin
+account (name, email, password of 10+ characters; 14+ counts as strong).
 
-To pair: in Lookabout open Cameras → **+** → *Home hub* (or Settings → Home
-hub), enter the hub's address, press **Show a pairing code** on the hub page
-and type the code. The viewer gets a key; the hub keeps only a hash of it.
-Removing the viewer under Paired devices makes the key stop working.
+After that everyone signs in with an account:
+
+- An admin invites people (Household) and passes on the invite link; the hub
+  sends no email. The invitee opens it and chooses a password.
+- Admins group cameras ("Nursery") and give members `view` or `manage` per
+  group. A camera in no group is for admins only. Managers can delete events
+  and clips, edit zones, rename cameras and share the group with other members
+  (view only).
+- A phone or app can sign in with a pairing code: an admin makes one for a
+  member (`POST /api/pairing/code {member}`) and the app trades it at
+  `POST /api/pair` for a session of that member.
+- Sessions last 30 days (7 while remote access is on) and are listed, and can
+  be ended, under Paired devices.
+
+Hubs that were paired before accounts keep working **read-only** until the
+first admin is made; making the first admin ends every old pairing key, and
+each device signs in once.
+
+- Passkeys (one per address) and, once an admin has set up their own Google or Apple
+  keys under `PUT /api/admin/auth/providers`, "Continue with Google / Apple" for invited
+  people. Provider secrets are encrypted with a key file in `keys/` on the volume.
+
+Not built yet: the setup wizard endpoints and remote access (see
+`docs/hub-auth.md` and epic #13). Passkeys, Google and Apple are tested against
+stand-ins only.
 
 Settings live in `docker-compose.yml`:
 
@@ -49,12 +72,42 @@ Ports used on the host: 8787 (page and API), 8555 TCP+UDP (live video).
 go2rtc's own ports (1984, 8554) listen on the machine itself only.
 Everything the hub stores is in the `hub-data` volume.
 
+## Setup wizards and health
+
+`./install.sh` installs the hub with Docker on a 64-bit Raspberry Pi OS, Debian or Ubuntu machine
+(`--name`, `--port`, `--usb /dev/video0`, `--install-docker`; `--print` shows what it would do, `--dry-run`
+writes `.env` and the USB override without starting Docker). It names every host it contacts before doing so.
+
+Admins get guided setup in the web app (**Home hub → Setup**, `#/setup`): a health panel (admin
+sign-in strength, public address, Google and Apple, remote access, the secrets key, disk, video, cry
+detection, discovery) and wizards for the install check, Google, Apple, and remote access through
+Cloudflare Tunnel or Tailscale. The hub runs each check and keeps the progress (`/api/setup/{flow}`), and each
+check says before it runs which host it contacts and what it sends. Google and Apple can only be switched on
+once their wizard has passed (including a test sign-in with your own account). Remote access switches on only
+when the lock-down check passes: every admin has a passkey or a 14+ character password, every camera, stream
+and clip route refuses a stranger (the hub asks itself as a stranger), no CORS headers are sent, and go2rtc's
+own ports are closed to the network. Remote access can be turned off from the same page.
+
+## The web app
+
+The hub serves the Lookabout web app from its own address (it sends no CORS headers, so a page
+from anywhere else can't talk to it). Build it and put it next to the compose file:
+
+```sh
+npm run hub:web          # builds the web app into hub/web (needs NODE_AUTH_TOKEN, see the root README)
+docker compose up -d     # ./web is mounted read-only at /app/web
+```
+
+Open `http://<pi-address>:8787`: the app is the front page and the status page moves to `/status`.
+Without a `web` folder the status page stays at `/`. In development, `LOOKABOUT_HUB=http://<hub>:8787 npm run dev`
+proxies `/api` to a hub so the dev page and the hub share an origin.
+
 ## Run without Docker
 
 ```sh
 pip install -r requirements.txt
 python3 -m lookabout_hub --data ./data --model yamnet.tflite   # needs go2rtc and ffmpeg on PATH
-python3 -m unittest discover -s tests             # needs numpy; clip tests also ffmpeg
+python3 -m unittest discover -s tests             # needs numpy; clip tests also ffmpeg (sign-in tests take ~40 s: scrypt)
 ```
 
 Without go2rtc the hub still starts (pairing and the camera list work) but
@@ -63,10 +116,16 @@ LiteRT it runs without cry detection and says so in its log.
 
 ## Interface
 
-`lookabout_hub/server.py` lists every route. In short: `/api/hub`,
-`/api/pairing/code` and `/api/pair` are open; everything else needs the
-viewer's key as `Authorization: Bearer <token>` (or `?token=` where a
-browser can't set headers, such as `<img>`).
+`lookabout_hub/server.py` lists every route and `docs/hub-auth.md` says who
+may call each. In short: `/api/hub`, `/api/auth/providers`,
+`/api/auth/login/local`, `/api/auth/join`, `/api/setup/state`,
+`/api/setup/first-admin` and `/api/pair` are open; everything else needs a
+session, as the `lk_session` cookie or `Authorization: Bearer <token>`.
+Streams, snapshots and clips also take `?ticket=` (from
+`POST /api/cameras/<id>/ticket`, five minutes, one camera) where a browser
+can't set headers. A session in a URL (`?token=`) is no longer accepted. The
+hub sends no CORS headers: the web app has to be served from the hub itself
+(or, in development, through Vite's proxy).
 
 ## Status
 
@@ -80,6 +139,11 @@ zones and settings saved on the hub. **Not yet run on a Pi, as a Docker
 container, or against a real RTSP camera, USB webcam, microphone or a real
 baby.** Of the image, only the go2rtc build stage has been built. Detection
 thresholds are untuned: expect to adjust sensitivity on real scenes.
+
+Accounts and camera groups (G3) are tested against the HTTP interface with stand-in cameras,
+one case per route of the contract's table. **The web and native apps don't use them yet**:
+they still pair the old way, so against this hub they can't sign in until G3's app side and
+G4 land.
 
 Known limits:
 

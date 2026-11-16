@@ -1,4 +1,4 @@
-"""The hub's own page: what it is doing, and the pairing code."""
+"""The hub's own page: what it is doing, and the setup code on first run."""
 
 PAGE = """<!doctype html><html lang=en><meta charset=utf-8>
 <meta name=viewport content='width=device-width,initial-scale=1'>
@@ -25,40 +25,36 @@ button{font:600 15px system-ui,sans-serif;min-height:48px;border-radius:12px;bor
 <div class=m id=sub>Loading…</div>
 <div class=card><dl>
 <dt>Cameras</dt><dd id=cams>–</dd>
-<dt>Paired viewers</dt><dd id=viewers>–</dd>
+<dt>Signed-in devices</dt><dd id=viewers>–</dd>
 <dt>Video bridge</dt><dd id=bridge>–</dd>
 <dt>Free space</dt><dd id=free>–</dd>
 </dl></div>
-<div class=card>
-<h2>Pair a viewer</h2>
-<div class=m>In Lookabout, open Cameras → + → Home hub, enter this hub's address and the code shown here.</div>
+<div class=card id=setup hidden>
+<h2>Set up this hub</h2>
+<div class=m>Open Lookabout, choose Home hub, enter this hub's address and the setup code below, then make the first admin account.</div>
 <div class=m>Address: <b id=addr></b></div>
-<button id=show>Show a pairing code</button>
-<div id=pair hidden>
 <div class=code id=code aria-live=polite></div>
-<div class=m id=left style='text-align:center'></div>
+<div class=m id=devices hidden></div>
 </div>
-<div class=qr id=qr hidden></div>
+<div class=card id=ready hidden>
+<h2>Signing in</h2>
+<div class=m>Sign in with your Lookabout account. To add a phone, an admin makes a pairing code under Household in Lookabout.</div>
 </div>
-<div class=m>Anyone who can open this page can pair a viewer, so keep the hub on your home network only.</div>
 </main>
 <script>
 const $=id=>document.getElementById(id);
 function size(b){return b>=1e12?(b/1e12).toFixed(1)+' TB':b>=1e9?Math.round(b/1e9)+' GB':Math.round(b/1e6)+' MB'}
 function load(){fetch('api/hub').then(r=>r.json()).then(j=>{
 $('sub').textContent=j.name+' · version '+j.version;
-$('cams').textContent=j.cameras;$('viewers').textContent=j.viewers;
-$('bridge').textContent=j.bridge?'Running':'Not running';
-$('free').textContent=size(j.free_bytes)}).catch(()=>{$('sub').textContent='The hub is not answering.'})}
+$('cams').textContent=j.cameras??'–';$('viewers').textContent=j.viewers??'–';
+$('bridge').textContent=j.bridge==null?'–':j.bridge?'Running':'Not running';
+$('free').textContent=j.free_bytes==null?'–':size(j.free_bytes)}).catch(()=>{$('sub').textContent='The hub is not answering.'});
+fetch('api/setup/state').then(r=>r.json()).then(j=>{
+$('setup').hidden=!j.setup_required;$('ready').hidden=j.setup_required;
+$('code').textContent=j.setup_code||'';
+if(j.setup_required&&!j.setup_code){$('code').textContent='Open this page on the home network to see the code.'}
+$('devices').hidden=!j.devices;
+$('devices').textContent=j.devices?j.devices+' device'+(j.devices>1?'s':'')+' paired before accounts will be signed out when the admin is made. Until then they can watch but not change anything.':''}).catch(()=>{})}
 $('addr').textContent=location.origin;
-let timer;
-$('show').onclick=()=>fetch('api/pairing/code',{method:'POST'}).then(r=>r.json()).then(j=>{
-$('pair').hidden=false;$('code').textContent=j.code;$('qr').innerHTML=j.qr||'';$('qr').hidden=!j.qr;
-$('show').textContent='Show a new code';
-const end=Date.now()+j.expires_in*1000;clearInterval(timer);
-const tick=()=>{const s=Math.max(0,Math.round((end-Date.now())/1000));
-$('left').textContent=s?'Works once, for '+Math.floor(s/60)+':'+String(s%60).padStart(2,'0'):'This code has run out.';
-if(!s){clearInterval(timer);$('code').textContent='';$('qr').hidden=true;load()}};
-tick();timer=setInterval(tick,1000)});
 load();setInterval(load,10000);
 </script>"""

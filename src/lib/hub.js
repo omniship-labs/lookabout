@@ -1,7 +1,9 @@
 // Talks to the home hub (see hub/ in this repo).
 //
-// A paired hub is { address, token, viewerId, id, name }. The token is the
-// key the hub gave this viewer when it was paired; every request shows it.
+// A signed-in hub is { address, token, member, id, name }. The token is the
+// session the hub gave this device when the person signed in (docs/hub-auth.md);
+// every request shows it. The hub sends no CORS headers, so `address` has to be
+// the hub's own origin (the app served by the hub, or Vite's /api proxy in development).
 
 const TIMEOUT_MS = 8000;
 export const DEFAULT_HUB_PORT = 8787;
@@ -65,11 +67,105 @@ export async function hubInfo(address) {
   return (await request(address, '/api/hub')).json();
 }
 
-/** Swap a pairing code from the hub's page for this viewer's key. */
+/** Swap a pairing code (made by an admin for one member) for that member's session on this device. */
 export async function pairWithHub(address, code, name) {
   const res = await request(address, '/api/pair', { method: 'POST', body: { code, name, platform: 'web' } });
   const j = await res.json();
-  return { address, token: j.token, viewerId: j.viewer.id, id: j.hub.id, name: j.hub.name };
+  return { address, token: j.token, member: j.member, id: j.hub.id, name: j.hub.name };
+}
+
+/** Does the hub still need its first admin? `setup_code` is only sent to the home network. */
+export async function hubSetupState(address) {
+  return (await request(address, '/api/setup/state')).json();
+}
+
+/** Sign in with email and password. Resolves with the hub as the store keeps it. */
+export async function signInToHub(address, email, password, device = '') {
+  const res = await request(address, '/api/auth/login/local?app=1', { method: 'POST', body: { email, password, device } });
+  const j = await res.json();
+  const info = await hubInfo(address);
+  return { address, token: j.token, member: j.me, id: info.id, name: info.name };
+}
+
+/** Make the first admin with the setup code the hub shows, then sign in as them. */
+export async function setUpHub(address, { setupCode, name, email, password }, device = '') {
+  await request(address, '/api/setup/first-admin', { method: 'POST', body: { setup_code: setupCode, name, email, password } });
+  return signInToHub(address, email, password, device);
+}
+
+/** Accept an invite link's code: choose a password and sign in. */
+export async function joinHub(address, invite, name, password, device = '') {
+  const res = await request(address, '/api/auth/join?app=1', { method: 'POST', body: { invite, name, password, device } });
+  const j = await res.json();
+  const info = await hubInfo(address);
+  return { address, token: j.token, member: j.me, id: info.id, name: info.name };
+}
+
+/** A challenge for signing in with a passkey (no account needed first). */
+export async function passkeySignInOptions(address) {
+  return (await request(address, '/api/auth/passkey/options', { method: 'POST', body: {} })).json();
+}
+
+/** Finish a passkey sign-in with what the device answered (see passkey.js). */
+export async function passkeySignIn(address, credential, device = '') {
+  const res = await request(address, '/api/auth/login/passkey?app=1', { method: 'POST', body: { credential, device } });
+  const j = await res.json();
+  const info = await hubInfo(address);
+  return { address, token: j.token, member: j.me, id: info.id, name: info.name };
+}
+
+/** The passkeys this member has on the hub, and the address this page is opened on. */
+export const hubPasskeys = (hub) => hubGet(hub, '/api/me/passkeys');
+export const passkeyRegisterOptions = (hub) => hubSend(hub, 'POST', '/api/me/passkeys/options', {});
+export const passkeyRegister = (hub, credential, name) => hubSend(hub, 'POST', '/api/me/passkeys', { credential, name });
+export const removePasskey = (hub, id) => hubSend(hub, 'DELETE', `/api/me/passkeys/${encodeURIComponent(id)}`);
+
+/** Where to send the browser for "Continue with Google / Apple". Resolves with the address. */
+export async function providerSignInAddress(address, provider, returnTo = '/') {
+  return (await (await request(address, `/api/auth/login/${provider}`, { method: 'POST', body: { return_to: returnTo } })).json()).redirect;
+}
+
+/** What the sign-in screen's error says, from the hub's `/#/signin?error=…&message=…` redirect. '' when none. */
+export function signInErrorFromHash(hash) {
+  const query = (hash || '').split('?')[1] || '';
+  const params = new URLSearchParams(query);
+  return params.get('error') ? params.get('message') || 'That sign-in didn’t work.' : '';
+}
+
+/**
+ * Is this page served by a hub? (The hub sends no CORS headers, so the app that talks to one is
+ * the app the hub itself serves.) Resolves with { address, info, setup } or null.
+ */
+export async function detectOwnHub(origin) {
+  try {
+    const info = await hubInfo(origin);
+    if (!info || typeof info.id !== 'string' || typeof info.version !== 'string') return null;
+    let setup = {};
+    try {
+      setup = await hubSetupState(origin);
+    } catch {
+      // An older hub: nothing to set up.
+    }
+    return { address: origin, info, setup };
+  } catch {
+    return null;
+  }
+}
+
+/** The hub as the store keeps it, for a browser that already holds the hub's session cookie. Null if it doesn't. */
+export async function ownSession(own) {
+  try {
+    const me = await hubGet({ address: own.address, token: '' }, '/api/me');
+    return { address: own.address, token: '', member: me.member, id: own.info.id, name: own.info.name };
+  } catch {
+    return null;
+  }
+}
+
+/** The invite code inside a link the hub made (`…/#/join?invite=CODE`), or ''. */
+export function inviteFromLink(text) {
+  const m = /[#&?]invite=([A-Za-z0-9_-]+)/.exec(text || '');
+  return m ? m[1] : '';
 }
 
 export const hubGet = async (hub, path) => (await request(hub.address, path, { token: hub.token })).json();
@@ -84,15 +180,19 @@ export const hubFrame = async (hub, camId) =>
 export const hubTestCamera = async (hub, camera) =>
   (await request(hub.address, '/api/cameras/test', { method: 'POST', token: hub.token, body: camera })).blob();
 
-/** Address of a clip (.mp4) or its thumbnail (.jpg), usable as a <video> or <img> source. */
-export const hubClipUrl = (hub, name) => `${hub.address}/api/clips/${name}?token=${encodeURIComponent(hub.token)}`;
+/**
+ * A five-minute ticket for one camera, for places that can't send the session
+ * (an <img>, a <video>). The session itself never goes in a URL.
+ */
+export const hubTicket = async (hub, camId) => (await request(hub.address, `/api/cameras/${camId}/ticket`, { method: 'POST', token: hub.token, body: {} })).json();
 
-/** The clip file itself, for saving or sharing. */
+const withTicket = (hub, path, t) => `${hub.address}${path}?ticket=${encodeURIComponent(t.ticket)}`;
+
+/** A clip (.mp4) or its thumbnail (.jpg) as a file: to play (through an object URL), save or share. */
 export const hubClipFile = async (hub, name) => (await request(hub.address, `/api/clips/${name}`, { token: hub.token })).blob();
 
 /** Address of a camera's MJPEG stream, usable as an <img> source. */
-export const hubMjpegUrl = (hub, camId) =>
-  `${hub.address}/api/cameras/${camId}/stream.mjpeg?token=${encodeURIComponent(hub.token)}`;
+export const hubMjpegUrl = async (hub, camId) => withTicket(hub, `/api/cameras/${camId}/stream.mjpeg`, await hubTicket(hub, camId));
 
 function iceGathered(pc, waitMs = 1500) {
   if (pc.iceGatheringState === 'complete') return Promise.resolve();
@@ -147,6 +247,7 @@ export function viewerCamera(c) {
     status: c.status === 'offline' ? 'offline' : 'online',
     sinceMs: c.since * 1000,
     motion: !!c.motion,
+    access: c.access || 'view', // "manage" lets the person delete events, edit zones and rename
     hub: true,
   };
 }

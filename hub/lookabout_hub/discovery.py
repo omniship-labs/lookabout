@@ -6,6 +6,10 @@ import sys
 SERVICE = "_lookabout-hub._tcp.local."
 
 
+def NOT_ANNOUNCED():
+    """What advertise() hands back when it could not announce the hub (nothing to withdraw)."""
+
+
 def local_addresses():
     """This machine's addresses on the home network, best guess first."""
     found = []
@@ -31,11 +35,11 @@ def advertise(name, hub_id, port, version):
         from zeroconf import ServiceInfo, Zeroconf
     except ImportError:
         print("zeroconf is not installed: apps won't find the hub on their own.", file=sys.stderr)
-        return lambda: None
+        return NOT_ANNOUNCED
     addresses = local_addresses()
     if not addresses:
         print("No network address found: not announcing the hub.", file=sys.stderr)
-        return lambda: None
+        return NOT_ANNOUNCED
     info = ServiceInfo(
         SERVICE,
         f"{name}.{SERVICE}",
@@ -49,7 +53,7 @@ def advertise(name, hub_id, port, version):
         zc.register_service(info, allow_name_change=True)
     except Exception as err:  # no multicast on this network, port taken, ...
         print(f"Could not announce the hub on the network: {err}", file=sys.stderr)
-        return lambda: None
+        return NOT_ANNOUNCED
 
     def withdraw():
         zc.unregister_service(info)

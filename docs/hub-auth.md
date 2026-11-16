@@ -1,7 +1,14 @@
 # Hub accounts and access: API contract
 
 Status: **owner's answers in (15 Nov 2026), ready for sign-off** (issue #48).
-Nothing here is built yet. Task numbers below are the GitHub issues' titles:
+Built in the hub so far (G3, `hub/lookabout_hub/accounts.py`, `webauthn.py`, `oidc.py`, `vault.py`, `server.py`):
+local accounts, passkeys, Google and Apple sign-in, the app token exchange, provider settings, first admin,
+sessions, invites, camera groups and grants, sharing, tickets, the audit log, route enforcement and no CORS, the
+move from pairing keys, the setup wizard endpoints, the health panel and remote access (its lock-down check).
+Passkeys, Google and Apple are tested against stand-ins (a software authenticator, a fake provider): **never tried
+with a real device, Google account or Apple developer account.**
+Where the build added to or settled something this document left open, it says so under
+[As built](#as-built). Task numbers below are the GitHub issues' titles:
 G1–G10 are #48–#57 (epic #13), F1 is #43, F5 is #47, E4 is #39. The hub today has pairing keys only (B3, `hub/lookabout_hub/pairing.py`);
 this document is what replaces them. It is written to be language-neutral:
 the hub is Python (B9), but nothing below depends on that.
@@ -571,3 +578,84 @@ The owner's answers to the draft's questions:
 - **Q7. Pages to hub:** dropped. The hub sends no CORS headers.
 - **Q8. Old pairing keys:** all ended when the first admin is created;
   every device signs in again once.
+
+## As built
+
+Details the first build settled (G3):
+
+- `POST /api/auth/join` `{ invite, name, password }` accepts an invite link: it activates the
+  pending member and signs them in (cookie, or `{ token, me }` with `?app=1`).
+- `GET /api/setup/state` (open) → `{ setup_required, setup_code, devices }`. The code is returned
+  only to callers on a private or loopback address; `devices` is how many old pairing keys will be
+  ended. A wrong code five times replaces it with a new one, printed in the log.
+- `POST /api/pairing/code` is admin-only and takes `{ member }` (default: the admin). `POST /api/pair`
+  returns `{ token, member, hub }`.
+- `GET /api/cameras` adds `access` (`view` or `manage`) to each camera.
+- `POST /api/cameras` takes optional `groups: [ids]` for the new camera.
+- A member answers `GET /api/household` with `members` (id, name, role; active ones only) and
+  `groups` (id, name, level).
+- Login attempts count per email **and** client address; behind a tunnel on the same machine the
+  address is taken from `X-Forwarded-For`.
+- Tickets are kept in memory: a hub restart ends them.
+- The session cookie is `Secure` when the request carries `X-Forwarded-Proto: https`.
+- `OPTIONS` answers 405: nothing is allowed cross-origin.
+- **Passkeys.** `POST /api/auth/passkey/options` (open) → `{ options }` with a challenge and the hub's address as
+  `rpId` (the host in the address bar, without the port); `POST /api/auth/login/passkey` `{ credential }` signs in
+  (cookie, or `?app=1`). Adding one: `POST /api/me/passkeys/options`, then `POST /api/me/passkeys`
+  `{ credential, name }`. `GET /api/me/passkeys` lists them with the address each works on (`rp_id`) and
+  `this_address`; `DELETE /api/me/passkeys/{id}`. Challenges last 5 minutes and work once. Attestation is not
+  checked (a passkey proves the key, not the make of device). ES256, EdDSA and RS256 keys. A sign count that
+  doesn't go up is refused as a copied key. One passkey per member per address (Q2), made as discoverable
+  credentials so no email is needed. WebAuthn needs a host name, not an IP address: a hub opened as
+  `http://192.168.1.5:8787` can't use passkeys (browsers refuse); `lookabout.local` can.
+- **Google and Apple.** `POST /api/auth/login/{google|apple}` `{ return_to, app?, code_challenge? }` → `{ redirect }`
+  and a `lk_oauth` state cookie (`SameSite=None; Secure` for Apple, whose answer is a cross-site POST, so Apple's
+  callback is the one route that skips the Origin check; state, nonce and the cookie guard it). The callback
+  redirects to `return_to` (a path on the hub only) with the session cookie, or to
+  `/#/signin?error=<code>&message=…` with `not_invited`, `bad_state`, `cancelled`, `provider_refused`,
+  `unreachable`, `already_linked` or `sign_in_failed`. Google uses PKCE; Apple's client secret is made per request
+  from the `.p8` key (ES256, 10 minutes). ID tokens must be RS256 with a key from the provider's published set.
+- **Apps.** With `app: true` and a `code_challenge` (S256) the callback ends on
+  `lookabout://hub/signed-in?code=…`; `POST /api/auth/token` `{ code, code_verifier, device }` → `{ token, me }`.
+  The code works once, for 5 minutes, and a wrong verifier uses it up.
+- **Linking.** `POST /api/me/link/{google|apple}` starts the same dance for the signed-in member;
+  `DELETE /api/me/link/{provider}` refuses (409) if it is their last way in. Passkeys count as ways in too.
+- **Provider settings.** `GET`/`PUT /api/admin/auth/providers` as drawn above, plus `local.password` and
+  `local.passkey` switches. Turning Google or Apple on needs `public_url` on https and the client details, but
+  **not yet** a passed wizard (G8, G9 aren't built): the hub says what is missing. Passwords can't be turned off
+  while an admin has no passkey or linked account; both can't be off. Secrets are sealed with a key in
+  `keys/vault.key` on the volume (mode 600) and never returned.
+- Passkeys count as a strong credential (Q3) for remote access.
+- **The web app comes from the hub.** The hub serves a built app from its web folder (`LOOKABOUT_WEB_DIR`, default
+  `/app/web`; `npm run hub:web` builds into `hub/web`): the app is `/`, the status page is `/status`, files can't leave
+  the folder. In the app, `detectOwnHub` finds out whether the page is served by a hub; if so it skips "install" and
+  "find", and picks up the cookie session Google or Apple sign-in leaves (`adoptOwnSession`). The hub's invite link is
+  `/#/join?invite=…`; a failed provider sign-in lands on `/#/signin?error=…&message=…`.
+- **Screens** are short lists that open small screens (not long forms). `#/account` is a menu (name, Passkeys, Password,
+  Google and Apple, devices, sign out), each its own page. `#/household` is the people (admins: tap a person for their role,
+  which camera groups they can open as None/View/Manage, a pairing code for their phone, remove), with Invite someone,
+  Camera groups and Sign-in options one tap away; managers see a "Share a group you manage" section. `#/setup` leads with a
+  verdict ("2 things to look at") and shows only what needs attention (every check is one tap away), then Sign-in options
+  (passwords and passkeys switches; Google and Apple open their guides), Remote access and Check the install. The wizards
+  show one step at a time: finished steps shrink to a line.
+- **Setup wizards (G6–G10).** Endpoints as drawn above, admin-only; the `hub-install` flow is also open before the first
+  admin exists, from the home network only. Manual steps are `console`, `developer`, `tunnel`, `tailnet`,
+  `funnel-or-private`. Checks are synchronous (no 202). Checking a step again sends the later ones back to `todo`.
+  `GET …/{step}/plan` also says `manual`. What each check does: `docker` (runs in a container: `/.dockerenv`, the cgroup,
+  or `LOOKABOUT_IN_CONTAINER`), `container` (go2rtc is up), `volume` (data folder writable, 1 GB free), `mdns` (announced),
+  `first-admin`; `public-url` (https, a real domain, not an IP or `.local`); `client`, `identifiers`, `key` (validate and store
+  encrypted, never echo); `discovery` (fetches Google's discovery document, compares the endpoints the hub uses),
+  `token-endpoint` (a signed request to Apple with a made-up code; `invalid_client` is a fail, anything else a pass),
+  `test-sign-in` (the admin has linked that provider; an admin may start a link before the provider is switched on, which is
+  the test); `certificate` (TLS handshake to the public address; the Tailscale flow gives its address here),
+  `reach-self` (asks the public address for `/api/hub` and compares the hub id), `locked-down` (below).
+- **Switching Google or Apple on** (`PUT /api/admin/auth/providers`) now needs that flow to have passed (409 names the step).
+- **Lock-down** (`locked-down`): every admin has a passkey or a 14+ character password; a stranger on the loopback address
+  gets 401/423 from the camera, event, stream, WebRTC, clip, settings, USB and household routes; a request with a foreign
+  `Origin` gets no `Access-Control-*` header; ports 1984 and 8554 do not accept connections on the machine's network
+  addresses. Passing turns remote access on (sessions 7 days). `POST /api/admin/remote/off` turns it off and sends the
+  lock-down step back to `todo`.
+- **Health.** `GET /api/admin/health` → `{ state, checks: [{ id, title, state: ok|warn|bad, detail, flow? }], flows }`.
+  While remote access is on it re-runs the lock-down checks and reports `bad` if one stopped holding.
+- **Install.** `hub/install.sh` (and the docker-compose file reading `.env`); the Pages site's install page only makes the
+  text to copy.

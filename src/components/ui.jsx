@@ -295,6 +295,16 @@ export function Row({ minHeight = 52, to, onClick, children, style, ...rest }) {
   return <div style={s} {...rest}>{children}</div>;
 }
 
+/** A row that opens another screen: its text, and a chevron to say so. */
+export function RowLink({ to, title, sub, muted }) {
+  return (
+    <Row to={to}>
+      <RowText title={title} sub={sub} muted={muted} />
+      <span aria-hidden="true" style={{ color: 'var(--text-muted)', fontSize: 20, lineHeight: 1, paddingLeft: 8 }}>›</span>
+    </Row>
+  );
+}
+
 export function RowText({ title, sub, weight = 500, muted = false }) {
   return (
     <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flexGrow: 1 }}>

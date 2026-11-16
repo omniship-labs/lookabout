@@ -9,14 +9,15 @@ services:
     # (mDNS) and reach cameras there, and live video uses port 8555.
     network_mode: host
     environment:
-      LOOKABOUT_HUB_NAME: lookabout-hub   # name shown in Lookabout
-      LOOKABOUT_HUB_PORT: "8787"
+      LOOKABOUT_HUB_NAME: ${LOOKABOUT_HUB_NAME:-lookabout-hub}   # name shown in Lookabout (install.sh writes .env)
+      LOOKABOUT_HUB_PORT: ${LOOKABOUT_HUB_PORT:-8787}
+      LOOKABOUT_IN_CONTAINER: "1"         # lets the setup wizard see it is running in Docker
       # LOOKABOUT_CRY_MODEL: /app/models/yamnet.tflite   # cry classifier, already in the image
     volumes:
-      - hub-data:/data                    # settings, paired viewers, recordings
-    # USB webcams plugged into this machine: list each one here.
-    # devices:
-    #   - /dev/video0:/dev/video0
+      - hub-data:/data                    # settings, accounts, recordings
+      - ./web:/app/web:ro                 # the web app (npm run hub:web); optional, the hub shows a status page without it
+    # USB webcams plugged into this machine: ./install.sh --usb /dev/video0 writes
+    # docker-compose.override.yml for them (or list each one here).
 
 volumes:
   hub-data:

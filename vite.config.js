@@ -6,6 +6,11 @@ export default defineConfig({
   // sub-path alike (routes are in the hash).
   base: './',
   plugins: [react()],
+  server: {
+    // The hub sends no CORS headers: in development the page and the hub share an origin through this proxy.
+    // LOOKABOUT_HUB=http://raspberrypi.local:8787 npm run dev
+    proxy: { '/api': process.env.LOOKABOUT_HUB || 'http://localhost:8787' },
+  },
   build: {
     target: ['es2021', 'safari15'],
     outDir: 'dist',

@@ -1,8 +1,8 @@
 import React from 'react';
 import { href, navigate } from '../lib/router.js';
 import { hubLine, removeHubEvent, useStore } from '../lib/store.js';
-import { eventDays as groupByDay, hubClipFile, hubClipUrl, hubFrame, hubGet, hubSend } from '../lib/hub.js';
-import { announce } from '../lib/hooks.js';
+import { eventDays as groupByDay, hubClipFile, hubFrame, hubGet, hubSend } from '../lib/hub.js';
+import { announce, useBlobUrl } from '../lib/hooks.js';
 import { applyScenario, clip, eventDays, zones as sampleZones } from '../lib/sampleData.js';
 import { BackBar, Banner, Chip, Cta, Eyebrow, Group, Note, Page, Row, SliderBar, display, mono } from '../components/ui.jsx';
 import { CameraTile, ClipRow, Shell, ShellHeader, VideoTile } from '../components/viewer.jsx';
@@ -127,13 +127,14 @@ export function Cameras({ scenario }) {
 
 /** One event from the hub: opens its clip once the hub has cut one. */
 function HubEventRow({ e, hub }) {
+  const thumb = useBlobUrl(() => (e.clip && e.thumb ? hubClipFile(hub, e.thumb) : Promise.reject()), [hub, e.thumb, e.clip]);
   return (
     <ClipRow
       title={e.t}
       meta={e.clip ? `${e.m ? `${e.m} · ` : ''}clip` : e.m}
       time={e.time}
       to={e.clip ? `/events/clip/${e.hubId}` : undefined}
-      thumb={e.clip && e.thumb ? hubClipUrl(hub, e.thumb) : undefined}
+      thumb={thumb || undefined}
       play={!!e.clip}
     />
   );
@@ -187,6 +188,9 @@ function HubClip({ eventId }) {
   const e = s.hubEvents.find((x) => String(x.hubId) === String(eventId));
   const [busy, setBusy] = React.useState('');
   const [confirming, setConfirming] = React.useState(false);
+  // The clip is fetched with this device's session, so the session never goes in an address.
+  const clipSrc = useBlobUrl(() => (e && e.clip ? hubClipFile(s.hub, e.clip) : Promise.reject()), [s.hub, e && e.clip]);
+  const poster = useBlobUrl(() => (e && e.thumb ? hubClipFile(s.hub, e.thumb) : Promise.reject()), [s.hub, e && e.thumb]);
 
   if (!e || !e.clip) {
     return (
@@ -245,8 +249,8 @@ function HubClip({ eventId }) {
           controls
           playsInline
           preload="metadata"
-          poster={e.thumb ? hubClipUrl(s.hub, e.thumb) : undefined}
-          src={hubClipUrl(s.hub, e.clip)}
+          poster={poster || undefined}
+          src={clipSrc || undefined}
           aria-label={`Recorded clip: ${e.t}`}
           style={{ width: '100%', maxHeight: '60dvh', display: 'block' }}
         />

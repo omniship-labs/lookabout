@@ -102,3 +102,39 @@ export function announce(message) {
 export function haptic() {
   if (navigator.vibrate) navigator.vibrate(10);
 }
+
+/** The address a `make()` promise resolves with, or '' until it has (and if it fails). Runs again when `deps` change. */
+export function useAsyncUrl(make, deps) {
+  const [url, setUrl] = React.useState('');
+  React.useEffect(() => {
+    let stale = false;
+    setUrl('');
+    make().then((u) => !stale && setUrl(u), () => {});
+    return () => {
+      stale = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+  return url;
+}
+
+/** An object URL for a file fetched with the session (a clip or thumbnail); freed when done. */
+export function useBlobUrl(fetchBlob, deps) {
+  const [url, setUrl] = React.useState('');
+  React.useEffect(() => {
+    let stale = false;
+    let made = '';
+    setUrl('');
+    fetchBlob().then((blob) => {
+      if (stale) return;
+      made = URL.createObjectURL(blob);
+      setUrl(made);
+    }, () => {});
+    return () => {
+      stale = true;
+      if (made) URL.revokeObjectURL(made);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+  return url;
+}

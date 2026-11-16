@@ -1,4 +1,5 @@
 zeroconf>=0.132,<1   # announces the hub on the network
 segno>=1.6,<2        # QR code on the pairing page
 numpy>=1.26,<3       # motion detection, sound handling
+cryptography>=42,<51 # passkeys, Google and Apple sign-in, the vault for provider secrets
 ai-edge-litert>=2,<3 # runs the cry classifier (YAMNet); wheels for x86-64 and arm64

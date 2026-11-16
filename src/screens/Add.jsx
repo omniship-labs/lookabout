@@ -1,10 +1,13 @@
 import React from 'react';
 import { navigate } from '../lib/router.js';
 import { addCameras, addHubCamera, getState, refreshHub, setHub, unpairHub, useStore } from '../lib/store.js';
-import { hubGet, hubInfo, hubTestCamera, normalizeHubAddress, pairWithHub } from '../lib/hub.js';
-import { blockedByHttps, codeReady, findHub, freeSpace, typedAddress } from '../lib/hubPairing.js';
+import { detectOwnHub, hubGet, providerSignInAddress, hubTestCamera, inviteFromLink, joinHub, normalizeHubAddress, pairWithHub, setUpHub, signInToHub } from '../lib/hub.js';
+import { passwordProblem } from '../lib/access.js';
+import { signInOptions } from '../lib/household.js';
+import { passkeyAddressOk, passkeysSupported, signInWithPasskey } from '../lib/passkey.js';
+import { blockedByHttps, codeReady, findHub, typedAddress } from '../lib/hubPairing.js';
 import { addGroups, connectKinds, guidedFlows, nestCams, ringCams, teslaClips, wyzeCams } from '../lib/sampleData.js';
-import { BackBar, CheckMark, Cta, Eyebrow, Field, Group, Note, Page, Pill, Row, RowText, Spacer, StatusBox, Steps, display, mono } from '../components/ui.jsx';
+import { BackBar, CheckMark, Cta, Eyebrow, Field, Group, Note, Page, Pill, Row, RowLink, RowText, Spacer, Steps, display, mono } from '../components/ui.jsx';
 import { ClipRow, VideoTile } from '../components/viewer.jsx';
 import { Wizard } from '../components/Wizard.jsx';
 
@@ -436,40 +439,24 @@ function thisDeviceName() {
 /** The paired hub: what it is, and unpairing. */
 function HubPaired() {
   const s = useStore();
-  const [info, setInfo] = React.useState(null);
   const [busy, setBusy] = React.useState(false);
-  React.useEffect(() => {
-    hubInfo(s.hub.address).then(setInfo).catch(() => setInfo(null));
-  }, [s.hub.address, s.hubReachable]);
+  const admin = !!s.hub.member && s.hub.member.role === 'admin';
   return (
-    <FlowPage title="Home hub" eyebrow="HOME HUB" intro="This device is paired with your hub. Cameras, events and paired viewers come from it.">
-      {s.hubReachable ? (
-        <StatusBox label="PAIRED">
-          {s.hub.name}{info ? ` · ${freeSpace(info.free_bytes)} · version ${info.version}` : ''}
-        </StatusBox>
-      ) : (
+    <FlowPage title={s.hub.name} eyebrow="HOME HUB" intro={s.hubReachable ? `Signed in${s.hub.member ? ` as ${s.hub.member.name || s.hub.member.email}` : ''}.` : undefined}>
+      {!s.hubReachable ? (
         <Note size={13} style={{ color: 'var(--osl-danger)' }}>
           Can’t reach the hub right now. Check that it is switched on and that this device is on your home network.
         </Note>
-      )}
+      ) : null}
       <Group>
-        <Row><RowText title="Address" sub={s.hub.address} /></Row>
-        <Row to="/cameras"><RowText title="Cameras" sub={`${s.hubCameras.length} on this hub`} /><span style={{ fontSize: 14, color: 'var(--text-muted)' }}>Open</span></Row>
-        <Row to="/devices"><RowText title="Paired viewers" sub={`${s.hubViewers.length} hold a key`} /><span style={{ fontSize: 14, color: 'var(--text-muted)' }}>Manage</span></Row>
+        <RowLink to="/cameras" title="Cameras" sub={`${s.hubCameras.length} on this hub`} />
+        <RowLink to="/household" title="Household" sub={admin ? 'People and what they can see' : 'Who is in it'} />
+        <RowLink to="/account" title="Your account" />
+        {admin ? <RowLink to="/setup" title="Setup" sub="Sign-in options, remote access, install" /> : null}
       </Group>
       <Spacer />
       <Cta href="#/add">Add a camera</Cta>
-      <Cta
-        variant="outline"
-        disabled={busy}
-        onClick={async () => {
-          setBusy(true);
-          await unpairHub();
-        }}
-      >
-        {busy ? 'Unpairing…' : 'Unpair this device'}
-      </Cta>
-      <Note center>Unpairing deletes this device’s key on the hub. The hub keeps its cameras and other viewers.</Note>
+      <Cta variant="outline" disabled={busy} onClick={async () => { setBusy(true); await unpairHub(); }}>{busy ? 'Signing out…' : 'Sign out'}</Cta>
     </FlowPage>
   );
 }
@@ -479,18 +466,18 @@ function HubPaired() {
  * `address` and `code` can come in the link (`#/add/hub?address=…&code=…`).
  */
 const HUB_README = 'https://github.com/omniship-labs/lookabout/tree/main/hub#install-on-a-raspberry-pi';
-const PAIR_SECRET = ['code']; // the pairing code is never written to storage
+const PAIR_SECRET = ['code', 'password', 'setupCode']; // codes and passwords are never written to storage
 
 const pairSteps = [
   {
     id: 'start',
     title: 'Start the hub',
     guide: [
-      ['Copy the ', ['hub'], ' folder from the Lookabout repository to the Pi (64-bit Raspberry Pi OS with Docker).'],
-      'In that folder, start it. The first build takes several minutes on a Pi.',
+      ['Copy the ', ['hub'], ' folder from the Lookabout repository to the Pi (64-bit Raspberry Pi OS).'],
+      'In that folder, run the installer. It sets up Docker if you let it, builds the hub (several minutes on a Pi) and prints the address and a setup code.',
     ],
-    copy: [{ label: 'COMMAND', text: 'docker compose up -d --build' }],
-    links: [{ label: 'Hub install guide', href: HUB_README }],
+    copy: [{ label: 'Command', text: './install.sh' }],
+    links: [{ label: 'Make the exact command', href: '#/install' }, { label: 'Hub install guide', href: HUB_README }],
     confirmLabel: 'The hub is running',
   },
   {
@@ -520,65 +507,146 @@ const pairSteps = [
   },
   {
     id: 'pair',
-    title: 'Pair this device',
-    guide: ['On the hub’s page, press “Show a pairing code”. The code lasts five minutes.', 'Type it here.'],
-    links: (values) => (values.base ? [{ label: 'Open the hub page', href: values.base }] : []),
-    body: ({ values, set }) => (
-      <>
-        <Field
-          label="Pairing code from the hub page"
-          monoFont
-          size={18}
-          emphasis
-          placeholder="XXXX-XXXX"
-          value={values.code || ''}
-          maxLength={12}
-          onChange={(e) => set({ code: e.target.value.toUpperCase() })}
-          autoCapitalize="characters"
-          autoComplete="off"
-          spellCheck={false}
-        />
-        <Field
-          label="Name for this device"
-          value={values.name ?? thisDeviceName()}
-          maxLength={24}
-          onChange={(e) => set({ name: e.target.value })}
-          hint="Shown under Paired devices, so you can tell viewers apart."
-        />
-      </>
-    ),
-    ready: (values) => codeReady(values.code),
-    checkLabel: 'Pair this hub',
-    checkingLabel: 'Pairing…',
+    title: 'Sign in to the hub',
+    guide: (values) => (values.setup ? ['This hub has no accounts yet. Make the first admin with the setup code the hub shows.'] : null),
+    body: ({ values, set }) => {
+      const first = !!values.setup;
+      const joining = !first && !!values.invite;
+      return (
+        <>
+          {!first && !values.code ? (
+            <>
+              {(values.providers || []).map((p) => (
+                <Cta
+                  key={p.id}
+                  variant="outline"
+                  onClick={async () => {
+                    try {
+                      // Back to the app afterwards: the hub leaves its session cookie, and the app picks it up.
+                      window.location.href = await providerSignInAddress(values.base, p.id, '/#/cameras');
+                    } catch (err) {
+                      set({ passkeyError: err.message });
+                    }
+                  }}
+                >
+                  {p.label}
+                </Cta>
+              ))}
+              {passkeysSupported() ? (
+                <Cta
+                  variant="outline"
+                  onClick={async () => {
+                    const address = values.base || normalizeHubAddress(typedAddress(values));
+                    if (!passkeyAddressOk(new URL(address).hostname)) {
+                      set({ passkeyError: 'Passkeys need the hub’s name (such as raspberrypi.local), not its IP address.' });
+                      return;
+                    }
+                    try {
+                      set({ passkeyError: '' });
+                      setHub(await signInWithPasskey(address, thisDeviceName()));
+                      await refreshHub();
+                    } catch (err) {
+                      set({ passkeyError: err.message });
+                    }
+                  }}
+                >
+                  Sign in with a passkey
+                </Cta>
+              ) : null}
+              {values.passkeyError ? <Note size={13} style={{ color: 'var(--osl-danger)' }}>{values.passkeyError}</Note> : null}
+            </>
+          ) : null}
+          {first ? (
+            <Field label="Setup code" monoFont size={18} emphasis placeholder="XXXX-XXXX" value={values.setupCode || ''} maxLength={12}
+              onChange={(e) => set({ setupCode: e.target.value.toUpperCase() })} autoCapitalize="characters" autoComplete="off" spellCheck={false}
+            />
+          ) : null}
+          {joining ? (
+            <Field label="Invite link" monoFont size={13} value={values.invite || ''} onChange={(e) => set({ invite: e.target.value })} autoCapitalize="off" spellCheck={false} />
+          ) : null}
+          {first || joining ? <Field label="Your name" value={values.person || ''} maxLength={40} onChange={(e) => set({ person: e.target.value })} autoComplete="name" /> : null}
+          {!joining ? <Field label="Email" type="email" value={values.email || ''} onChange={(e) => set({ email: e.target.value })} autoCapitalize="off" autoComplete="email" spellCheck={false} /> : null}
+          <Field
+            label={first || joining ? 'Choose a password' : 'Password'}
+            type="password"
+            value={values.password || ''}
+            onChange={(e) => set({ password: e.target.value })}
+            autoComplete={first || joining ? 'new-password' : 'current-password'}
+            hint={first || joining ? '10 or more characters. 14 or more is strong enough for remote access.' : undefined}
+            error={(first || joining) && values.password ? passwordProblem(values.password) || undefined : undefined}
+          />
+          {!first && !joining && !values.code ? (
+            <button type="button" onClick={() => set({ invite: ' ' })} style={{ minHeight: 44, border: 0, background: 'transparent', font: '500 14px var(--font-sans)', color: 'var(--text-muted)', textDecoration: 'underline', textUnderlineOffset: 3 }}>I have an invite link</button>
+          ) : null}
+        </>
+      );
+    },
+    ready: (values) => {
+      if (values.code) return codeReady(values.code); // a pairing code from a link or QR
+      if (values.setup) return codeReady(values.setupCode) && !!(values.email || '').includes('@') && !passwordProblem(values.password);
+      if (values.invite) return !!(inviteFromLink(values.invite) || values.invite.trim()) && !passwordProblem(values.password);
+      return !!(values.email || '').includes('@') && !!values.password;
+    },
+    checkLabel: (values) => (values.setup ? 'Make the first admin' : values.invite ? 'Join' : 'Sign in'),
+    checkingLabel: 'Signing in…',
     check: async ({ values }) => {
-      const name = (values.name ?? '').trim() || thisDeviceName();
-      setHub(await pairWithHub(values.base || normalizeHubAddress(typedAddress(values)), values.code, name));
+      const address = values.base || normalizeHubAddress(typedAddress(values));
+      const device = thisDeviceName();
+      let hub;
+      if (values.code) hub = await pairWithHub(address, values.code, device);
+      else if (values.setup) hub = await setUpHub(address, { setupCode: values.setupCode, name: values.person, email: values.email, password: values.password }, device);
+      else if (values.invite) hub = await joinHub(address, inviteFromLink(values.invite) || values.invite.trim(), values.person, values.password, device);
+      else hub = await signInToHub(address, values.email, values.password, device);
+      setHub(hub);
       await refreshHub();
-      return 'Paired.';
+      return 'Signed in.';
     },
     note: 'Without a hub everything still works live, phone to phone.',
   },
 ];
 
-export function HubSetup({ address: linkAddress, code: linkCode }) {
+export function HubSetup({ address: linkAddress, code: linkCode, invite, error }) {
   const s = useStore();
+  const [own, setOwn] = React.useState(undefined); // undefined: still asking; null: this page isn't a hub's
+  React.useEffect(() => {
+    let off = false;
+    detectOwnHub(window.location.origin).then(async (found) => {
+      if (found) {
+        // Which of Google and Apple this hub has switched on (the cookie they leave is the hub's own page's).
+        const options = await signInOptions(found.address).catch(() => ({ providers: [] }));
+        found.providers = options.providers.filter((p) => p.id === 'google' || p.id === 'apple');
+      }
+      if (!off) setOwn(found);
+    });
+    return () => {
+      off = true;
+    };
+  }, []);
   if (s.hubPaired) return <HubPaired />;
+  if (own === undefined) return null;
+  // On the hub's own page there is nothing to install or find: just sign in.
+  const steps = own ? pairSteps.filter((step) => step.id === 'pair') : pairSteps;
+  const initial = own
+    ? { base: own.address, setup: !!own.setup.setup_required, setupCode: own.setup.setup_code || '', invite: invite || '', code: linkCode, providers: own.providers || [] }
+    : { address: linkAddress, code: linkCode, invite: invite || '' };
   return (
     <FlowPage
-      title="Set up a home hub"
+      title={own ? `Sign in to ${own.info.name}` : 'Set up a home hub'}
       eyebrow="HOME HUB"
-      intro="Optional. Runs on a Raspberry Pi 4/5, home server or NAS. Brings in cameras you already own and keeps watch when your phone is away."
+      intro={own ? undefined : 'Optional. Runs on a Raspberry Pi 4 or 5, home server or NAS. Brings in cameras you already own and keeps watch when your phone is away.'}
     >
+      {error ? <Note size={13} style={{ color: 'var(--osl-danger)' }}>{error}</Note> : null}
       <Wizard
         flow="hub-pair"
-        steps={pairSteps}
+        steps={steps}
         secret={PAIR_SECRET}
-        // A link from the hub's QR (#/add/hub?address=…&code=…) fills the form in.
-        initialValues={{ address: linkAddress, code: linkCode }}
-        restart={!!linkAddress}
+        // A link from the hub's QR (#/add/hub?address=…&code=…) or an invite link fills the form in.
+        initialValues={initial}
+        restart={!!linkAddress || !!invite || !!own}
         forgetWhenDone
-        onDone={() => navigate('/add')}
+        onDone={() => navigate(own ? '/cameras' : '/add')}
       />
+      {own && own.setup.setup_required ? <Note center>Something wrong with the install? <a href="#/setup/hub-install">Check it</a>.</Note> : null}
     </FlowPage>
   );
 }

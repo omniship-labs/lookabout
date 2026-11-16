@@ -31,7 +31,7 @@ As of 15 Nov 2026:
 | Android app | `android/` | Builds. Start, viewer tabs and live video from a test stream checked on an emulator. No tests. |
 | iOS app | `ios/` | Sources type-check. **Never built or run** (#30). No tests. |
 | Home hub | `hub/` | Pairing, camera bridge, recording, motion and cry detection, clips and the viewer API work against stand-in cameras with the web viewer, and have tests. **Never run on a Pi or as a container** (#20). No alerts yet (#22). |
-| Accounts | `docs/hub-auth.md` | Contract drafted, waiting on sign-off (#48). Nothing built beyond the wizard component (#49). |
+| Accounts and setup | `hub/`, `docs/hub-auth.md` | Built and tested: local accounts, passkeys, Google and Apple sign-in (own keys), invites, camera groups, sharing, tickets, provider settings, audit log, no CORS; the hub serves the web app; sign-in, Account, Household, Setup health and the install, Google, Apple and remote access (Cloudflare, Tailscale) wizards; `hub/install.sh`. **Seen working in Chromium against a real hub process** (`tests/browser`: first admin, invite, groups, passkey with a virtual authenticator, the Google redirect and discovery check against Google, the install check, health panel, wizards), but with stand-in design tokens, and **never with a real Google or Apple sign-in, a hardware passkey, a real Cloudflare or Tailscale tunnel, `install.sh` against Docker, a Pi or a container**. Native apps don't sign in to a hub yet (#69). |
 
 What is real: the camera role on each platform (device camera, dim, pause),
 themes, settings, cameras added by address (ESP32 / Pi stream shows in the

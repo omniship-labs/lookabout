@@ -13,7 +13,7 @@
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, readdirSync } from 'node:fs';
 
-const FLOORS = { lines: 83, branches: 96, functions: 82 };
+const FLOORS = { lines: 91, branches: 96, functions: 92 };
 
 // src/lib files with no tests yet, and why. Shrink this list; don't grow it.
 const UNTESTED = {
