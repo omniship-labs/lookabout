@@ -3,14 +3,14 @@ import { announce } from '../lib/hooks.js';
 import { navigate } from '../lib/router.js';
 import { useStore } from '../lib/store.js';
 import { detectOwnHub } from '../lib/hub.js';
-import { saveProviders } from '../lib/household.js';
+import { getProviders, saveProviders } from '../lib/household.js';
 import {
   FLOW_LIST, FLOW_TITLES, HEALTH_LABEL, confirmStep, getFlow, getHealth, getPlan, healthLine, healthLink, hubProgress, isFlow, stepsFor, turnOffRemote,
   verifyStep, worstFirst,
 } from '../lib/setupFlows.js';
 import { DEFAULT_HUB_NAME, DEFAULT_PORT, copyCommand, hubNameProblem, hubUrl, installCommand, portProblem, badUsb } from '../lib/hubInstall.js';
 import { Wizard, CopyBox } from '../components/Wizard.jsx';
-import { BackBar, Cta, Field, Group, Note, Page, Pill, Row, RowText, display } from '../components/ui.jsx';
+import { BackBar, Chip, Cta, Field, Group, Note, Page, Pill, Row, RowLink, RowText, Switch, display } from '../components/ui.jsx';
 
 /** The hub to talk to: the signed-in one, or (before anyone has signed in) the one serving this page. */
 function useSetupHub() {
@@ -30,11 +30,12 @@ function useSetupHub() {
 
 const toneFor = { ok: 'success', warn: 'caution', bad: 'caution' };
 
-/** G10: how the hub is set up, worst first, each row leading to what fixes it. */
+/** How the hub is set up: a verdict, then only what needs attention. The rest is one tap away. */
 export function SetupHealth() {
   const { hub, loading } = useSetupHub();
   const [health, setHealth] = React.useState(null);
   const [problem, setProblem] = React.useState('');
+  const [all, setAll] = React.useState(false);
   const load = React.useCallback(() => {
     if (hub) getHealth(hub).then(setHealth, (err) => setProblem(err.message));
   }, [hub]);
@@ -46,44 +47,88 @@ export function SetupHealth() {
   if (!hub) {
     return (
       <Page>
-        <BackBar to="/add/hub" title="Setup health" />
+        <BackBar to="/add/hub" title="Setup" />
         <Note size={13}>Sign in to a home hub as an admin first.</Note>
-        <Cta href="#/add/hub">Sign in to a hub</Cta>
+        <Cta href="#/add/hub">Sign in</Cta>
       </Page>
     );
   }
+  const attention = health ? worstFirst(health.checks).filter((c) => c.state !== 'ok') : [];
+  const shown = all ? worstFirst(health.checks) : attention;
   return (
     <Page gap={16}>
-      <BackBar to="/add/hub" title="Setup health" />
+      <BackBar to="/add/hub" title="Setup" />
       {problem ? <Note size={13} style={{ color: 'var(--osl-danger)' }}>{problem}</Note> : null}
       {health ? (
         <>
-          <span style={{ fontSize: 14, color: 'var(--text-muted)' }}>{healthLine(health)}</span>
+          <h2 style={display(22)}>{healthLine(health)}</h2>
+          {shown.length ? (
+            <Group>
+              {shown.map((c) => {
+                const to = healthLink(c);
+                const row = (
+                  <>
+                    <RowText title={c.title} sub={c.detail} />
+                    {c.state !== 'ok' ? <Pill small tone={toneFor[c.state]}>{HEALTH_LABEL[c.state]}</Pill> : null}
+                  </>
+                );
+                return to && c.state !== 'ok' ? <Row key={c.id} to={to}>{row}</Row> : <Row key={c.id}>{row}</Row>;
+              })}
+            </Group>
+          ) : null}
+          <Chip active={all} onClick={() => setAll((v) => !v)}>{all ? 'Show only what needs attention' : 'Show every check'}</Chip>
+          <h2 style={display(18)}>Set up</h2>
           <Group>
-            {worstFirst(health.checks).map((c) => {
-              const to = healthLink(c);
-              const row = (
-                <>
-                  <RowText title={c.title} sub={c.detail} />
-                  <Pill small tone={toneFor[c.state]}>{HEALTH_LABEL[c.state]}</Pill>
-                </>
-              );
-              return to && c.state !== 'ok' ? <Row key={c.id} to={to}>{row}</Row> : <Row key={c.id}>{row}</Row>;
-            })}
+            <RowLink to="/setup/sign-in" title="Sign-in options" sub="Passwords, passkeys, Google, Apple" />
+            <RowLink to="/setup/remote" title="Remote access" sub={(health.checks.find((c) => c.id === 'remote') || {}).detail} />
+            <RowLink to="/setup/hub-install" title="Check the install" />
           </Group>
-          <h2 style={display(18)}>Setup guides</h2>
+        </>
+      ) : !problem ? <Note size={13}>Asking the hub…</Note> : null}
+    </Page>
+  );
+}
+
+/** Which ways of signing in are on. Each provider's guide is its own page. */
+export function SignInMethods() {
+  const { hub, loading } = useSetupHub();
+  const [p, setP] = React.useState(null);
+  const [problem, setProblem] = React.useState('');
+  const load = React.useCallback(() => {
+    if (hub) getProviders(hub).then(setP, (err) => setProblem(err.message));
+  }, [hub]);
+  React.useEffect(() => {
+    load();
+  }, [load]);
+  const change = async (patch) => {
+    setProblem('');
+    try {
+      await saveProviders(hub, patch);
+      await load();
+    } catch (err) {
+      setProblem(err.message);
+    }
+  };
+  if (loading) return null;
+  if (!hub) return <Page><BackBar to="/setup" title="Sign-in options" /><Cta href="#/add/hub">Sign in</Cta></Page>;
+  const state = (x) => (x.enabled ? 'On' : 'Not set up');
+  return (
+    <Page gap={16}>
+      <BackBar to="/setup" title="Sign-in options" />
+      {problem ? <Note size={13} style={{ color: 'var(--osl-danger)' }}>{problem}</Note> : null}
+      {p ? (
+        <>
           <Group>
-            {FLOW_LIST.map((f) => {
-              const state = (health.flows.find((x) => x.flow === f.flow) || {}).state;
-              return (
-                <Row key={f.flow} to={`/setup/${f.flow === 'remote-cloudflare' || f.flow === 'remote-tailscale' ? 'remote' : f.flow}`}>
-                  <RowText title={FLOW_TITLES[f.flow]} sub={f.blurb} />
-                  <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{state === 'passed' ? 'Done' : state === 'failed' ? 'Needs a fix' : state === 'started' ? 'Started' : ''}</span>
-                </Row>
-              );
-            })}
+            <Row><RowText title="Passwords" /><Switch label="Passwords" checked={p.local.password} onChange={(on) => change({ local: { password: on } })} /></Row>
+            <Row><RowText title="Passkeys" /><Switch label="Passkeys" checked={p.local.passkey} onChange={(on) => change({ local: { passkey: on } })} /></Row>
           </Group>
-          <Cta variant="outline" onClick={load}>Check again</Cta>
+          <Note size={13}>Passwords can only be turned off once every admin has a passkey or a linked account.</Note>
+          <Group>
+            <RowLink to="/setup/google" title="Google" sub={state(p.google)} />
+            <RowLink to="/setup/apple" title="Apple" sub={state(p.apple)} />
+          </Group>
+          {p.google.enabled ? <Chip onClick={() => change({ google: { enabled: false } })}>Turn off Google</Chip> : null}
+          {p.apple.enabled ? <Chip onClick={() => change({ apple: { enabled: false } })}>Turn off Apple</Chip> : null}
         </>
       ) : !problem ? <Note size={13}>Asking the hub…</Note> : null}
     </Page>
@@ -98,16 +143,16 @@ export function RemoteChoice() {
     if (hub) getHealth(hub).then(setHealth, () => {});
   }, [hub]);
   const remote = health && health.checks.find((c) => c.id === 'remote');
+  const on = !!remote && remote.detail.startsWith('On');
   return (
     <Page gap={16}>
       <BackBar to="/setup" title="Remote access" />
-      <Note size={13}>Off by default. Turn it on only if you want to watch from outside the house. Port forwarding on your router isn’t offered here: use one of these.</Note>
-      {remote ? <Note size={13}>{remote.detail}</Note> : null}
+      <Note size={13}>{on ? remote.detail : 'Off. Turn it on only to watch from outside the house. Choose how:'}</Note>
       <Group>
-        <Row to="/setup/remote-cloudflare"><RowText title="Cloudflare Tunnel" sub="Your own domain; no open ports at home" /></Row>
-        <Row to="/setup/remote-tailscale"><RowText title="Tailscale" sub="Private to your devices, or a public link with Funnel" /></Row>
+        <RowLink to="/setup/remote-cloudflare" title="Cloudflare Tunnel" sub="Your own domain" />
+        <RowLink to="/setup/remote-tailscale" title="Tailscale" sub="Private to your devices, or a public link" />
       </Group>
-      {health && health.state !== undefined && remote && remote.detail.startsWith('On') ? (
+      {on ? (
         <Cta variant="outline" onClick={async () => {
           await turnOffRemote(hub);
           announce('Remote access is off');
@@ -217,23 +262,23 @@ export function InstallHub() {
   const command = installCommand({ name, port, usb });
   return (
     <Page gap={16}>
-      <BackBar to="/add" eyebrow="HOME HUB · INSTALL" />
-      <h1 style={display(26, { lineHeight: 1.15 })}>Install the hub on a Raspberry Pi</h1>
-      <Note size={13}>You need a Pi 4 or 5 with the 64-bit Raspberry Pi OS, on your home network. Nothing on this page talks to your Pi: it only makes the text to copy.</Note>
+      <BackBar to="/add" title="Install the hub" />
+      <Note size={13}>For a Raspberry Pi 4 or 5 on your home network, running the 64-bit Raspberry Pi OS. This page only makes the commands to copy.</Note>
       <Field label="Name shown in Lookabout" value={name} maxLength={40} onChange={(e) => setName(e.target.value)} error={nameProblem || undefined} />
-      <Field label="Port" value={port} inputMode="numeric" onChange={(e) => setPort(e.target.value)} error={bad || undefined} hint="8787 is fine unless something else uses it." />
-      <Field label="USB webcams plugged into the Pi (optional)" monoFont size={14} value={usb} placeholder="/dev/video0" autoCapitalize="off"
-        onChange={(e) => setUsb(e.target.value)} error={usbBad.length ? `Not a webcam address: ${usbBad.join(', ')}` : undefined} hint="One or more, like /dev/video0. Skip it for ESP32 or network cameras."
-      />
-      <Field label="The Pi’s address" monoFont size={14} value={host} autoCapitalize="off" onChange={(e) => setHost(e.target.value)} />
-      <h2 style={display(18)}>1. Copy the hub folder to the Pi</h2>
-      <CopyBox label="ON YOUR COMPUTER, IN THE LOOKABOUT FOLDER" text={copyCommand(host.trim() || 'raspberrypi.local')} />
-      <h2 style={display(18)}>2. Run the installer on the Pi</h2>
-      <Note size={13}>It installs Docker if you add --install-docker (it says it is contacting get.docker.com first), builds the hub (several minutes on a Pi) and prints the address and a setup code.</Note>
-      {command ? <CopyBox label="ON THE PI, IN lookabout-hub" text={`cd lookabout-hub && ${command}`} /> : <Note size={13} style={{ color: 'var(--osl-danger)' }}>Fix the fields above to get the command.</Note>}
-      <h2 style={display(18)}>3. Open it</h2>
-      <CopyBox label="IN A BROWSER ON YOUR NETWORK" text={hubUrl(host.trim() || 'raspberrypi.local', Number(port) || DEFAULT_PORT)} />
-      <Note size={13}>Type the setup code the installer printed, and make the first admin account. Then Lookabout checks the install for you.</Note>
+      <details>
+        <summary style={{ minHeight: 44, display: 'flex', alignItems: 'center', fontSize: 14, fontWeight: 600, color: 'var(--text-strong)', cursor: 'pointer' }}>More options</summary>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingTop: 6 }}>
+          <Field label="Port" value={port} inputMode="numeric" onChange={(e) => setPort(e.target.value)} error={bad || undefined} />
+          <Field label="USB webcams on the Pi" monoFont size={14} value={usb} placeholder="/dev/video0" autoCapitalize="off" onChange={(e) => setUsb(e.target.value)}
+            error={usbBad.length ? `Not a webcam address: ${usbBad.join(', ')}` : undefined} hint="Skip for ESP32 or network cameras."
+          />
+          <Field label="The Pi’s address" monoFont size={14} value={host} autoCapitalize="off" onChange={(e) => setHost(e.target.value)} />
+        </div>
+      </details>
+      <CopyBox label="1 · ON YOUR COMPUTER, IN THE LOOKABOUT FOLDER" text={copyCommand(host.trim() || 'raspberrypi.local')} />
+      {command ? <CopyBox label="2 · ON THE PI" text={`cd lookabout-hub && ${command}`} /> : <Note size={13} style={{ color: 'var(--osl-danger)' }}>Fix the fields above to get the command.</Note>}
+      <CopyBox label="3 · OPEN IN A BROWSER" text={hubUrl(host.trim() || 'raspberrypi.local', Number(port) || DEFAULT_PORT)} />
+      <Note size={13}>The installer builds the hub (several minutes on a Pi), then prints a setup code. Type it there to make the first admin.</Note>
       <Cta href="#/add/hub">I’ve done this</Cta>
     </Page>
   );

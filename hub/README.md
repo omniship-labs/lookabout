@@ -78,7 +78,7 @@ Everything the hub stores is in the `hub-data` volume.
 (`--name`, `--port`, `--usb /dev/video0`, `--install-docker`; `--print` shows what it would do, `--dry-run`
 writes `.env` and the USB override without starting Docker). It names every host it contacts before doing so.
 
-Admins get guided setup in the web app (**Home hub → Setup health**, `#/setup`): a health panel (admin
+Admins get guided setup in the web app (**Home hub → Setup**, `#/setup`): a health panel (admin
 sign-in strength, public address, Google and Apple, remote access, the secrets key, disk, video, cry
 detection, discovery) and wizards for the install check, Google, Apple, and remote access through
 Cloudflare Tunnel or Tailscale. The hub runs each check and keeps the progress (`/api/setup/{flow}`), and each

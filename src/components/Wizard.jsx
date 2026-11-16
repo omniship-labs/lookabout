@@ -84,32 +84,51 @@ export function Wizard({ flow, steps, initialValues, secret, store: givenStore, 
   };
 
   const done = current === steps.length;
+  const left = steps.length - current - 1;
+  // One step at a time: finished steps shrink to a line, the step to work on is open, the rest wait out of sight.
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <Eyebrow>{done ? 'ALL STEPS DONE' : `STEP ${current + 1} OF ${steps.length}`}</Eyebrow>
+        <Eyebrow>{done ? 'ALL DONE' : `STEP ${current + 1} OF ${steps.length}`}</Eyebrow>
         <Bar value={Math.round((current / steps.length) * 100)} tone={done ? 'success' : 'strong'} />
       </div>
-      <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {steps.map((step, i) => (
-          <li key={step.id}>
-            <StepCard
-              step={step}
-              number={i + 1}
-              status={progress.steps[step.id]}
-              locked={i > current}
-              previous={i > 0 ? steps[i - 1].title : ''}
-              values={progress.values}
-              set={set}
-              headingRef={(el) => {
-                headings.current[step.id] = el;
-              }}
-              onCheck={() => run(step, i)}
-              onChange={() => setProgress((p) => reopen(steps, p, step.id))}
-            />
-          </li>
-        ))}
-      </ol>
+      {steps.slice(0, current).map((step, i) => (
+        <DoneRow key={step.id} step={step} status={progress.steps[step.id]} onChange={() => setProgress((p) => reopen(steps, p, step.id))} index={i} />
+      ))}
+      {!done ? (
+        <StepCard
+          key={steps[current].id}
+          step={steps[current]}
+          number={current + 1}
+          status={progress.steps[steps[current].id]}
+          locked={false}
+          previous=""
+          values={progress.values}
+          set={set}
+          headingRef={(el) => {
+            headings.current[steps[current].id] = el;
+          }}
+          onCheck={() => run(steps[current], current)}
+          onChange={() => setProgress((p) => reopen(steps, p, steps[current].id))}
+        />
+      ) : null}
+      {left > 0 ? <Note size={13}>{left} more step{left === 1 ? '' : 's'} after this one.</Note> : null}
+    </div>
+  );
+}
+
+/** A finished step, as one line. */
+function DoneRow({ step, status, onChange }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 44 }}>
+      <span style={{ ...badgeBase, width: 24, height: 24, background: 'var(--osl-success)', color: 'var(--osl-ink)' }}><CheckIcon size={14} strokeWidth={3} /></span>
+      <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flexGrow: 1 }}>
+        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-strong)' }}>{step.title}</span>
+        {status && status.summary ? <span style={{ fontSize: 12, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{status.summary}</span> : null}
+      </span>
+      <button type="button" onClick={onChange} style={linkButton}>
+        Change<span className="lk-sr"> {step.title}</span>
+      </button>
     </div>
   );
 }

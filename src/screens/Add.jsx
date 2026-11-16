@@ -1,13 +1,13 @@
 import React from 'react';
 import { navigate } from '../lib/router.js';
 import { addCameras, addHubCamera, getState, refreshHub, setHub, unpairHub, useStore } from '../lib/store.js';
-import { detectOwnHub, hubGet, hubInfo, providerSignInAddress, hubTestCamera, inviteFromLink, joinHub, normalizeHubAddress, pairWithHub, setUpHub, signInToHub } from '../lib/hub.js';
+import { detectOwnHub, hubGet, providerSignInAddress, hubTestCamera, inviteFromLink, joinHub, normalizeHubAddress, pairWithHub, setUpHub, signInToHub } from '../lib/hub.js';
 import { passwordProblem } from '../lib/access.js';
 import { signInOptions } from '../lib/household.js';
 import { passkeyAddressOk, passkeysSupported, signInWithPasskey } from '../lib/passkey.js';
-import { blockedByHttps, codeReady, findHub, freeSpace, typedAddress } from '../lib/hubPairing.js';
+import { blockedByHttps, codeReady, findHub, typedAddress } from '../lib/hubPairing.js';
 import { addGroups, connectKinds, guidedFlows, nestCams, ringCams, teslaClips, wyzeCams } from '../lib/sampleData.js';
-import { BackBar, CheckMark, Cta, Eyebrow, Field, Group, Note, Page, Pill, Row, RowText, Spacer, StatusBox, Steps, display, mono } from '../components/ui.jsx';
+import { BackBar, CheckMark, Chip, Cta, Eyebrow, Field, Group, Note, Page, Pill, Row, RowLink, RowText, Spacer, Steps, display, mono } from '../components/ui.jsx';
 import { ClipRow, VideoTile } from '../components/viewer.jsx';
 import { Wizard } from '../components/Wizard.jsx';
 
@@ -439,43 +439,24 @@ function thisDeviceName() {
 /** The paired hub: what it is, and unpairing. */
 function HubPaired() {
   const s = useStore();
-  const [info, setInfo] = React.useState(null);
   const [busy, setBusy] = React.useState(false);
-  React.useEffect(() => {
-    hubInfo(s.hub.address).then(setInfo).catch(() => setInfo(null));
-  }, [s.hub.address, s.hubReachable]);
+  const admin = !!s.hub.member && s.hub.member.role === 'admin';
   return (
-    <FlowPage title="Home hub" eyebrow="HOME HUB" intro="This device is signed in to your hub. Cameras, events and devices come from it.">
-      {s.hubReachable ? (
-        <StatusBox label="SIGNED IN">
-          {s.hub.name}{s.hub.member ? ` · ${s.hub.member.name || s.hub.member.email}` : ''}{info ? ` · ${freeSpace(info.free_bytes)} · version ${info.version}` : ''}
-        </StatusBox>
-      ) : (
+    <FlowPage title={s.hub.name} eyebrow="HOME HUB" intro={s.hubReachable ? `Signed in${s.hub.member ? ` as ${s.hub.member.name || s.hub.member.email}` : ''}.` : undefined}>
+      {!s.hubReachable ? (
         <Note size={13} style={{ color: 'var(--osl-danger)' }}>
           Can’t reach the hub right now. Check that it is switched on and that this device is on your home network.
         </Note>
-      )}
+      ) : null}
       <Group>
-        <Row><RowText title="Address" sub={s.hub.address} /></Row>
-        <Row to="/cameras"><RowText title="Cameras" sub={`${s.hubCameras.length} on this hub`} /><span style={{ fontSize: 14, color: 'var(--text-muted)' }}>Open</span></Row>
-        {s.hub.member && s.hub.member.role === 'admin' ? <Row to="/setup"><RowText title="Setup health" sub="Install, sign-in options and remote access" /><span style={{ fontSize: 14, color: 'var(--text-muted)' }}>Open</span></Row> : null}
-        <Row to="/account"><RowText title="Your account" sub="Password, passkeys, linked sign-ins" /><span style={{ fontSize: 14, color: 'var(--text-muted)' }}>Open</span></Row>
-        <Row to="/household"><RowText title="Household" sub="Who can see which cameras" /><span style={{ fontSize: 14, color: 'var(--text-muted)' }}>Open</span></Row>
-        <Row to="/devices"><RowText title="Signed-in devices" sub={`${s.hubViewers.length} signed in`} /><span style={{ fontSize: 14, color: 'var(--text-muted)' }}>Manage</span></Row>
+        <RowLink to="/cameras" title="Cameras" sub={`${s.hubCameras.length} on this hub`} />
+        <RowLink to="/household" title="Household" sub={admin ? 'People and what they can see' : 'Who is in it'} />
+        <RowLink to="/account" title="Your account" />
+        {admin ? <RowLink to="/setup" title="Setup" sub="Sign-in options, remote access, install" /> : null}
       </Group>
       <Spacer />
       <Cta href="#/add">Add a camera</Cta>
-      <Cta
-        variant="outline"
-        disabled={busy}
-        onClick={async () => {
-          setBusy(true);
-          await unpairHub();
-        }}
-      >
-        {busy ? 'Signing out…' : 'Sign out of this hub'}
-      </Cta>
-      <Note center>Signing out ends this device’s session on the hub. The hub keeps its cameras and everyone else’s sign-ins.</Note>
+      <Cta variant="outline" disabled={busy} onClick={async () => { setBusy(true); await unpairHub(); }}>{busy ? 'Signing out…' : 'Sign out'}</Cta>
     </FlowPage>
   );
 }
@@ -527,103 +508,79 @@ const pairSteps = [
   {
     id: 'pair',
     title: 'Sign in to the hub',
-    // A new hub asks for its first admin; after that people sign in, or join with an invite link.
-    guide: (values) => (values.setup
-      ? ['This hub has no accounts yet. Make the first admin: the setup code is on the hub’s page, and in its log.']
-      : ['Sign in with your hub account. If someone invited you, paste the invite link and choose a password.']),
-    links: (values) => (values.base ? [{ label: 'Open the hub page', href: values.base }] : []),
-    body: ({ values, set }) => (
-      <>
-        {values.setup ? (
+    guide: (values) => (values.setup ? ['This hub has no accounts yet. Make the first admin with the setup code the hub shows.'] : null),
+    body: ({ values, set }) => {
+      const first = !!values.setup;
+      const joining = !first && !!values.invite;
+      return (
+        <>
+          {!first && !values.code ? (
+            <>
+              {(values.providers || []).map((p) => (
+                <Cta
+                  key={p.id}
+                  variant="outline"
+                  onClick={async () => {
+                    try {
+                      // Back to the app afterwards: the hub leaves its session cookie, and the app picks it up.
+                      window.location.href = await providerSignInAddress(values.base, p.id, '/#/cameras');
+                    } catch (err) {
+                      set({ passkeyError: err.message });
+                    }
+                  }}
+                >
+                  {p.label}
+                </Cta>
+              ))}
+              {passkeysSupported() ? (
+                <Cta
+                  variant="outline"
+                  onClick={async () => {
+                    const address = values.base || normalizeHubAddress(typedAddress(values));
+                    if (!passkeyAddressOk(new URL(address).hostname)) {
+                      set({ passkeyError: 'Passkeys need the hub’s name (such as raspberrypi.local), not its IP address.' });
+                      return;
+                    }
+                    try {
+                      set({ passkeyError: '' });
+                      setHub(await signInWithPasskey(address, thisDeviceName()));
+                      await refreshHub();
+                    } catch (err) {
+                      set({ passkeyError: err.message });
+                    }
+                  }}
+                >
+                  Sign in with a passkey
+                </Cta>
+              ) : null}
+              {values.passkeyError ? <Note size={13} style={{ color: 'var(--osl-danger)' }}>{values.passkeyError}</Note> : null}
+            </>
+          ) : null}
+          {first ? (
+            <Field label="Setup code" monoFont size={18} emphasis placeholder="XXXX-XXXX" value={values.setupCode || ''} maxLength={12}
+              onChange={(e) => set({ setupCode: e.target.value.toUpperCase() })} autoCapitalize="characters" autoComplete="off" spellCheck={false}
+            />
+          ) : null}
+          {joining ? (
+            <Field label="Invite link" monoFont size={13} value={values.invite || ''} onChange={(e) => set({ invite: e.target.value })} autoCapitalize="off" spellCheck={false} />
+          ) : null}
+          {first || joining ? <Field label="Your name" value={values.person || ''} maxLength={40} onChange={(e) => set({ person: e.target.value })} autoComplete="name" /> : null}
+          {!joining ? <Field label="Email" type="email" value={values.email || ''} onChange={(e) => set({ email: e.target.value })} autoCapitalize="off" autoComplete="email" spellCheck={false} /> : null}
           <Field
-            label="Setup code"
-            monoFont
-            size={18}
-            emphasis
-            placeholder="XXXX-XXXX"
-            value={values.setupCode || ''}
-            maxLength={12}
-            onChange={(e) => set({ setupCode: e.target.value.toUpperCase() })}
-            autoCapitalize="characters"
-            autoComplete="off"
-            spellCheck={false}
+            label={first || joining ? 'Choose a password' : 'Password'}
+            type="password"
+            value={values.password || ''}
+            onChange={(e) => set({ password: e.target.value })}
+            autoComplete={first || joining ? 'new-password' : 'current-password'}
+            hint={first || joining ? '10 or more characters. 14 or more is strong enough for remote access.' : undefined}
+            error={(first || joining) && values.password ? passwordProblem(values.password) || undefined : undefined}
           />
-        ) : null}
-        {!values.setup && !values.code ? (
-          <Field
-            label="Invite link (only if you were invited)"
-            monoFont
-            size={13}
-            value={values.invite || ''}
-            onChange={(e) => set({ invite: e.target.value })}
-            autoCapitalize="off"
-            spellCheck={false}
-          />
-        ) : null}
-        {values.setup || values.invite ? (
-          <Field label="Your name" value={values.person || ''} maxLength={40} onChange={(e) => set({ person: e.target.value })} autoComplete="name" />
-        ) : null}
-        {!values.setup && !values.code && (values.providers || []).map((p) => (
-          <Cta
-            key={p.id}
-            variant="outline"
-            onClick={async () => {
-              try {
-                // Back to the app afterwards: the hub leaves its session cookie, and the app picks it up.
-                window.location.href = await providerSignInAddress(values.base, p.id, '/#/cameras');
-              } catch (err) {
-                set({ passkeyError: err.message });
-              }
-            }}
-          >
-            {p.label}
-          </Cta>
-        ))}
-        {!values.setup && !values.invite && !values.code && passkeysSupported() ? (
-          <>
-            <Cta
-              variant="outline"
-              onClick={async () => {
-                const address = values.base || normalizeHubAddress(typedAddress(values));
-                if (!passkeyAddressOk(new URL(address).hostname)) {
-                  set({ passkeyError: 'Passkeys need the hub’s name (such as raspberrypi.local), not its IP address.' });
-                  return;
-                }
-                try {
-                  set({ passkeyError: '' });
-                  setHub(await signInWithPasskey(address, (values.name ?? '').trim() || thisDeviceName()));
-                  await refreshHub();
-                } catch (err) {
-                  set({ passkeyError: err.message });
-                }
-              }}
-            >
-              Sign in with a passkey
-            </Cta>
-            {values.passkeyError ? <Note size={13} style={{ color: 'var(--osl-danger)' }}>{values.passkeyError}</Note> : null}
-          </>
-        ) : null}
-        {!values.invite ? (
-          <Field label="Email" type="email" value={values.email || ''} onChange={(e) => set({ email: e.target.value })} autoCapitalize="off" autoComplete="email" spellCheck={false} />
-        ) : null}
-        <Field
-          label={values.setup || values.invite ? 'Choose a password' : 'Password'}
-          type="password"
-          value={values.password || ''}
-          onChange={(e) => set({ password: e.target.value })}
-          autoComplete={values.setup || values.invite ? 'new-password' : 'current-password'}
-          hint={values.setup || values.invite ? 'At least 10 characters. Use 14 or more to be able to turn on remote access later.' : undefined}
-          error={(values.setup || values.invite) && values.password ? passwordProblem(values.password) || undefined : undefined}
-        />
-        <Field
-          label="Name for this device"
-          value={values.name ?? thisDeviceName()}
-          maxLength={24}
-          onChange={(e) => set({ name: e.target.value })}
-          hint="Shown under Paired devices, so you can tell devices apart."
-        />
-      </>
-    ),
+          {!first && !joining && !values.code ? (
+            <Chip onClick={() => set({ invite: ' ' })}>I have an invite link</Chip>
+          ) : null}
+        </>
+      );
+    },
     ready: (values) => {
       if (values.code) return codeReady(values.code); // a pairing code from a link or QR
       if (values.setup) return codeReady(values.setupCode) && !!(values.email || '').includes('@') && !passwordProblem(values.password);
@@ -634,7 +591,7 @@ const pairSteps = [
     checkingLabel: 'Signing in…',
     check: async ({ values }) => {
       const address = values.base || normalizeHubAddress(typedAddress(values));
-      const device = (values.name ?? '').trim() || thisDeviceName();
+      const device = thisDeviceName();
       let hub;
       if (values.code) hub = await pairWithHub(address, values.code, device);
       else if (values.setup) hub = await setUpHub(address, { setupCode: values.setupCode, name: values.person, email: values.email, password: values.password }, device);
@@ -676,12 +633,9 @@ export function HubSetup({ address: linkAddress, code: linkCode, invite, error }
     <FlowPage
       title={own ? `Sign in to ${own.info.name}` : 'Set up a home hub'}
       eyebrow="HOME HUB"
-      intro={own
-        ? 'This hub keeps your cameras and who may see them.'
-        : 'Optional. Runs on a Raspberry Pi 4/5, home server or NAS. Brings in cameras you already own and keeps watch when your phone is away.'}
+      intro={own ? undefined : 'Optional. Runs on a Raspberry Pi 4 or 5, home server or NAS. Brings in cameras you already own and keeps watch when your phone is away.'}
     >
       {error ? <Note size={13} style={{ color: 'var(--osl-danger)' }}>{error}</Note> : null}
-      {own && own.setup.setup_required ? <Cta variant="outline" href="#/setup/hub-install">Check this install first</Cta> : null}
       <Wizard
         flow="hub-pair"
         steps={steps}
@@ -692,6 +646,7 @@ export function HubSetup({ address: linkAddress, code: linkCode, invite, error }
         forgetWhenDone
         onDone={() => navigate(own ? '/cameras' : '/add')}
       />
+      {own && own.setup.setup_required ? <Note center>Something wrong with the install? <a href="#/setup/hub-install">Check it</a>.</Note> : null}
     </FlowPage>
   );
 }

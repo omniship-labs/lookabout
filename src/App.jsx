@@ -11,9 +11,9 @@ import { Devices, Settings } from './screens/Settings.jsx';
 import { AddCamera, ConnectNest, ConnectRing, ConnectStream, ConnectUsb, ConnectWyze, Guided, HubSetup, TeslaClips } from './screens/Add.jsx';
 import { PairCode, PairDone, PairScan } from './screens/Pairing.jsx';
 import { Flash } from './screens/Flash.jsx';
-import { Account } from './screens/Account.jsx';
-import { Household } from './screens/Household.jsx';
-import { InstallHub, RemoteChoice, SetupFlow, SetupHealth } from './screens/Setup.jsx';
+import { Account, AccountLinked, AccountPasskeys, AccountPassword } from './screens/Account.jsx';
+import { Household, HouseholdGroup, HouseholdGroups, HouseholdInvite, HouseholdMember } from './screens/Household.jsx';
+import { InstallHub, RemoteChoice, SetupFlow, SetupHealth, SignInMethods } from './screens/Setup.jsx';
 
 function screenFor(path, params) {
   const parts = path.split('/').filter(Boolean);
@@ -41,14 +41,22 @@ function screenFor(path, params) {
     case 'flash':
       return <Flash />;
     case 'account':
+      if (b === 'passkeys') return <AccountPasskeys />;
+      if (b === 'password') return <AccountPassword />;
+      if (b === 'linked') return <AccountLinked />;
       return <Account />;
     case 'household':
+      if (b === 'invite') return <HouseholdInvite />;
+      if (b === 'groups') return <HouseholdGroups />;
+      if (b === 'member') return <HouseholdMember key={parts[2]} id={parts[2]} />;
+      if (b === 'group') return <HouseholdGroup key={parts[2]} id={parts[2]} />;
       return <Household />;
     case 'install':
       return <InstallHub />;
     case 'setup':
       if (!b) return <SetupHealth />;
       // "remote" asks which way; the two remote guides are their own pages.
+      if (b === 'sign-in') return <SignInMethods />;
       return b === 'remote' ? <RemoteChoice /> : <SetupFlow key={b} flow={b} />;
     case 'signin':
       // The hub sends people back here after Google or Apple sign-in, with what went wrong in the address.

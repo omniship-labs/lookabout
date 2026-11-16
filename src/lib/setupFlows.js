@@ -238,3 +238,4 @@ export function healthLine(health) {
 
 /** Where to send someone for a health row: its flow's wizard, or nowhere. */
 export const healthLink = (check) => (check.flow ? `/setup/${check.flow === 'remote-cloudflare' ? 'remote' : check.flow}` : '');
+

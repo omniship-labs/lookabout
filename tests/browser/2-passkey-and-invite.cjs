@@ -19,11 +19,11 @@ const authenticatorOptions = { protocol: 'ctap2', transport: 'internal', hasResi
   // A: the admin adds a passkey.
   const A = await mk(`${SCR}/admin-state.json`);
   await step(A.page, 'admin adds a passkey for this address', async () => {
-    await A.page.goto(base + '/#/account');
-    await A.page.getByRole('heading', { name: 'Your account' }).waitFor();
-    await A.page.getByRole('button', { name: 'Add a passkey for this address' }).click();
-    await A.page.getByText('Works on localhost (this address)').waitFor({ timeout: 8000 });
-    if (await A.page.getByRole('button', { name: 'Add a passkey for this address' }).count()) throw new Error('still offers to add');
+    await A.page.goto(base + '/#/account/passkeys');
+    await A.page.getByRole('heading', { name: 'Passkeys' }).waitFor();
+    await A.page.getByRole('button', { name: 'Add a passkey here' }).click();
+    await A.page.getByText('This address', { exact: true }).waitFor({ timeout: 8000 });
+    if (await A.page.getByRole('button', { name: 'Add a passkey here' }).count()) throw new Error('still offers to add');
   });
   await A.page.screenshot({ path: `${SCR}/4-passkey-added.png`, fullPage: true });
   const { credentials } = await A.cdp.send('WebAuthn.getCredentials', { authenticatorId: A.authenticatorId });
@@ -35,14 +35,14 @@ const authenticatorOptions = { protocol: 'ctap2', transport: 'internal', hasResi
   await step(B.page, 'fresh browser signs in with the passkey', async () => {
     await B.page.goto(base + '/#/add/hub');
     await B.page.getByRole('button', { name: 'Sign in with a passkey' }).click();
-    await B.page.getByText('SIGNED IN', { exact: true }).waitFor({ timeout: 8000 });
+    await B.page.getByText(/Signed in as/).waitFor({ timeout: 8000 });
   });
   await step(B.page, 'signed in as the admin (sees the household editor)', async () => {
     await B.page.goto(base + '/#/household');
-    await B.page.getByRole('button', { name: 'Make an invite link' }).waitFor();
+    await B.page.getByRole('link', { name: 'Invite someone' }).waitFor();
   });
   await step(B.page, 'the passkey can be removed only while another way in remains', async () => {
-    await B.page.goto(base + '/#/account');
+    await B.page.goto(base + '/#/account/passkeys');
     await B.page.getByRole('button', { name: 'Remove' }).click();
     await B.page.getByText('No passkeys yet').waitFor();
   });
@@ -61,8 +61,7 @@ const authenticatorOptions = { protocol: 'ctap2', transport: 'internal', hasResi
   });
   await step(C.page, 'the member sees the household as a member (no invite form)', async () => {
     await C.page.goto(base + '/#/household');
-    await C.page.getByText('People').waitFor();
-    if (await C.page.getByRole('button', { name: 'Make an invite link' }).count()) throw new Error('member sees admin controls');
+        if (await C.page.getByRole('link', { name: 'Invite someone' }).count()) throw new Error('member sees admin controls');
     await C.page.getByText('Sam').first().waitFor();
   });
   await C.page.screenshot({ path: `${SCR}/5-member-household.png`, fullPage: true });
@@ -77,7 +76,7 @@ const authenticatorOptions = { protocol: 'ctap2', transport: 'internal', hasResi
   });
   await step(C.page, 'sign out returns to the sign-in form', async () => {
     await C.page.goto(base + '/#/account');
-    await C.page.getByRole('button', { name: 'Sign out of this hub' }).click();
+    await C.page.getByRole('button', { name: 'Sign out' }).click();
     await C.page.goto(base + '/#/add/hub');
     await C.page.getByLabel('Email').waitFor();
   });

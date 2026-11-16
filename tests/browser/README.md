@@ -11,7 +11,7 @@ cd hub && python3 -m lookabout_hub --data $SCR/data --port 8799 --web ../dist --
 cd ..                                           # then, in order, each against the same fresh hub:
 SCR=$SCR node tests/browser/1-first-admin-household.cjs   # first admin, group, invite (writes admin-state.json, invite.txt; script 3 signs in again with the same fixed smoke-test credentials)
 SCR=$SCR node tests/browser/2-passkey-and-invite.cjs      # passkey (virtual authenticator), join by invite, sign out
-SCR=$SCR node tests/browser/3-google-redirect.cjs         # the "Continue with Google" redirect (no Google account needed)
+node tests/browser/3-google-redirect.cjs                 # Google is gated by its wizard; an admin can try the link first (no Google account needed)
 # 4 needs a FRESH hub started with LOOKABOUT_IN_CONTAINER=1 (it makes its own first admin):
 SCR=$SCR node tests/browser/4-setup-wizards.cjs           # install helper, install check, health panel, Google and Cloudflare wizards
 ```

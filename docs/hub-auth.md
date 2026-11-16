@@ -631,9 +631,13 @@ Details the first build settled (G3):
   the folder. In the app, `detectOwnHub` finds out whether the page is served by a hub; if so it skips "install" and
   "find", and picks up the cookie session Google or Apple sign-in leaves (`adoptOwnSession`). The hub's invite link is
   `/#/join?invite=…`; a failed provider sign-in lands on `/#/signin?error=…&message=…`.
-- **Screens.** `#/account` (name, password, passkeys, linked sign-ins, devices, sign out) and `#/household` (admins:
-  people, invites, camera groups, grants, app pairing codes, public address, Google and Apple keys, password and passkey
-  switches; managers: share a group view-only).
+- **Screens** are short lists that open small screens (not long forms). `#/account` is a menu (name, Passkeys, Password,
+  Google and Apple, devices, sign out), each its own page. `#/household` is the people (admins: tap a person for their role,
+  which camera groups they can open as None/View/Manage, a pairing code for their phone, remove), with Invite someone,
+  Camera groups and Sign-in options one tap away; managers see a "Share a group you manage" section. `#/setup` leads with a
+  verdict ("2 things to look at") and shows only what needs attention (every check is one tap away), then Sign-in options
+  (passwords and passkeys switches; Google and Apple open their guides), Remote access and Check the install. The wizards
+  show one step at a time: finished steps shrink to a line.
 - **Setup wizards (G6–G10).** Endpoints as drawn above, admin-only; the `hub-install` flow is also open before the first
   admin exists, from the home network only. Manual steps are `console`, `developer`, `tunnel`, `tailnet`,
   `funnel-or-private`. Checks are synchronous (no 202). Checking a step again sends the later ones back to `todo`.
