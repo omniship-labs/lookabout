@@ -72,6 +72,22 @@ Ports used on the host: 8787 (page and API), 8555 TCP+UDP (live video).
 go2rtc's own ports (1984, 8554) listen on the machine itself only.
 Everything the hub stores is in the `hub-data` volume.
 
+## Setup wizards and health
+
+`./install.sh` installs the hub with Docker on a 64-bit Raspberry Pi OS, Debian or Ubuntu machine
+(`--name`, `--port`, `--usb /dev/video0`, `--install-docker`; `--print` shows what it would do, `--dry-run`
+writes `.env` and the USB override without starting Docker). It names every host it contacts before doing so.
+
+Admins get guided setup in the web app (**Home hub → Setup health**, `#/setup`): a health panel (admin
+sign-in strength, public address, Google and Apple, remote access, the secrets key, disk, video, cry
+detection, discovery) and wizards for the install check, Google, Apple, and remote access through
+Cloudflare Tunnel or Tailscale. The hub runs each check and keeps the progress (`/api/setup/{flow}`), and each
+check says before it runs which host it contacts and what it sends. Google and Apple can only be switched on
+once their wizard has passed (including a test sign-in with your own account). Remote access switches on only
+when the lock-down check passes: every admin has a passkey or a 14+ character password, every camera, stream
+and clip route refuses a stranger (the hub asks itself as a stranger), no CORS headers are sent, and go2rtc's
+own ports are closed to the network. Remote access can be turned off from the same page.
+
 ## The web app
 
 The hub serves the Lookabout web app from its own address (it sends no CORS headers, so a page

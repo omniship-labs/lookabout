@@ -132,6 +132,7 @@ class Federation:
         self.store = accounts.store
         self._lock = threading.Lock()
         self._states, self._codes = {}, {}      # in memory: a restart just makes people start again
+        self.gate = None                        # (provider) -> sentence when its setup wizard hasn't passed, else None
 
     # --- settings ----------------------------------------------------------
 
@@ -150,6 +151,12 @@ class Federation:
     def local(self):
         saved = self._saved().get("local", {})
         return {"password": saved.get("password", True), "passkey": saved.get("passkey", True)}
+
+    def configured(self, provider):
+        """Has the owner entered everything the provider needs? (It may not be switched on yet.)"""
+        saved = self._saved().get(provider, {})
+        needed = ("client_id", "secret") if provider == "google" else ("services_id", "team_id", "key_id", "key")
+        return all(saved.get(k) for k in needed)
 
     def redirect_uri(self, provider):
         return f"{self.public_url()}/api/auth/callback/{provider}" if self.public_url() else ""
@@ -202,6 +209,7 @@ class Federation:
             current["enabled"] = bool(new["enabled"]) if "enabled" in new else current.get("enabled", False)
             if current["enabled"]:
                 self._need_https()
+                self._need_wizard("google")
                 if not current["client_id"].endswith(".apps.googleusercontent.com") or not current.get("secret"):
                     raise Problem(409, "Add Google's client ID (it ends in .apps.googleusercontent.com) and secret first.")
             saved["google"] = current
@@ -220,11 +228,17 @@ class Federation:
             current["enabled"] = bool(new["enabled"]) if "enabled" in new else current.get("enabled", False)
             if current["enabled"]:
                 self._need_https()
+                self._need_wizard("apple")
                 if not all(current.get(f) for f in ("services_id", "team_id", "key_id", "key")):
                     raise Problem(409, "Add Apple's Services ID, Team ID, Key ID and key first.")
             saved["apple"] = current
         self._save(saved)
         return self.settings()
+
+    def _need_wizard(self, provider):
+        message = self.gate(provider) if self.gate else None
+        if message:
+            raise Problem(409, message)
 
     def _need_https(self):
         if not self.public_url().startswith("https://"):
@@ -234,7 +248,8 @@ class Federation:
 
     def begin(self, provider, return_to="/", purpose="login", member_id=None, app_challenge=None):
         """(address to send the browser to, state). Raises Problem when the provider isn't switched on."""
-        if provider not in PROVIDERS or not self.enabled(provider):
+        # An admin can try a provider before it is switched on: that is the wizard's test sign-in (a link).
+        if provider not in PROVIDERS or not (self.enabled(provider) or (purpose == "link" and self.configured(provider))):
             raise Problem(404, "That way of signing in isn't switched on.")
         saved = self._saved()[provider]
         state, nonce, verifier = (secrets.token_urlsafe(24) for _ in range(3))
@@ -263,7 +278,7 @@ class Federation:
             raise SignInError("That sign-in didn't start here, or it ran out. Try again.", "bad_state")
         if params.get("error"):
             raise SignInError("The sign-in was cancelled.", "cancelled")
-        if not params.get("code") or not self.enabled(provider):
+        if not params.get("code") or not (self.enabled(provider) or (found["purpose"] == "link" and self.configured(provider))):
             raise SignInError("The provider's answer wasn't valid.")
         saved = self._saved()[provider]
         form = {"grant_type": "authorization_code", "code": params["code"], "redirect_uri": self.redirect_uri(provider)}

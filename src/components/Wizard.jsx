@@ -21,6 +21,7 @@ import { CheckIcon, LockIcon, SpinnerIcon, WarningIcon } from './icons.jsx';
 //             Throw an Error whose message says, for the person, what went wrong.
 //             Leave out for a manual step: the button then just confirms.
 //   checkLabel, checkingLabel, confirmLabel   (checkLabel can also be (values) => text)
+//   plan      [{ host, sends }]   who the check contacts and what it sends, shown before it runs
 //   note      small print under the button
 //
 // ctx is { values, set(patch) }. Values are shared across the flow's steps.
@@ -209,6 +210,9 @@ function StepCard({ step, number, status, locked, previous, values, set, heading
               ))}
             </div>
           ) : null}
+          {(step.plan || []).map((p) => (
+            <Note key={p.host} size={13}>This check contacts <strong>{p.host}</strong>. It sends: {p.sends}</Note>
+          ))}
           {step.body ? <fieldset disabled={checking} style={fieldset}>{step.body({ values, set })}</fieldset> : null}
           {state === 'failed' ? (
             <p role="alert" style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: 'var(--osl-danger)' }}>{status.reason}</p>

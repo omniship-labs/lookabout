@@ -458,6 +458,7 @@ function HubPaired() {
       <Group>
         <Row><RowText title="Address" sub={s.hub.address} /></Row>
         <Row to="/cameras"><RowText title="Cameras" sub={`${s.hubCameras.length} on this hub`} /><span style={{ fontSize: 14, color: 'var(--text-muted)' }}>Open</span></Row>
+        {s.hub.member && s.hub.member.role === 'admin' ? <Row to="/setup"><RowText title="Setup health" sub="Install, sign-in options and remote access" /><span style={{ fontSize: 14, color: 'var(--text-muted)' }}>Open</span></Row> : null}
         <Row to="/account"><RowText title="Your account" sub="Password, passkeys, linked sign-ins" /><span style={{ fontSize: 14, color: 'var(--text-muted)' }}>Open</span></Row>
         <Row to="/household"><RowText title="Household" sub="Who can see which cameras" /><span style={{ fontSize: 14, color: 'var(--text-muted)' }}>Open</span></Row>
         <Row to="/devices"><RowText title="Signed-in devices" sub={`${s.hubViewers.length} signed in`} /><span style={{ fontSize: 14, color: 'var(--text-muted)' }}>Manage</span></Row>
@@ -491,11 +492,11 @@ const pairSteps = [
     id: 'start',
     title: 'Start the hub',
     guide: [
-      ['Copy the ', ['hub'], ' folder from the Lookabout repository to the Pi (64-bit Raspberry Pi OS with Docker).'],
-      'In that folder, start it. The first build takes several minutes on a Pi.',
+      ['Copy the ', ['hub'], ' folder from the Lookabout repository to the Pi (64-bit Raspberry Pi OS).'],
+      'In that folder, run the installer. It sets up Docker if you let it, builds the hub (several minutes on a Pi) and prints the address and a setup code.',
     ],
-    copy: [{ label: 'COMMAND', text: 'docker compose up -d --build' }],
-    links: [{ label: 'Hub install guide', href: HUB_README }],
+    copy: [{ label: 'COMMAND', text: './install.sh' }],
+    links: [{ label: 'Make the exact command', href: '#/install' }, { label: 'Hub install guide', href: HUB_README }],
     confirmLabel: 'The hub is running',
   },
   {
@@ -680,6 +681,7 @@ export function HubSetup({ address: linkAddress, code: linkCode, invite, error }
         : 'Optional. Runs on a Raspberry Pi 4/5, home server or NAS. Brings in cameras you already own and keeps watch when your phone is away.'}
     >
       {error ? <Note size={13} style={{ color: 'var(--osl-danger)' }}>{error}</Note> : null}
+      {own && own.setup.setup_required ? <Cta variant="outline" href="#/setup/hub-install">Check this install first</Cta> : null}
       <Wizard
         flow="hub-pair"
         steps={steps}

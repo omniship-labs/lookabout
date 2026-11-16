@@ -4,7 +4,7 @@ Status: **owner's answers in (15 Nov 2026), ready for sign-off** (issue #48).
 Built in the hub so far (G3, `hub/lookabout_hub/accounts.py`, `webauthn.py`, `oidc.py`, `vault.py`, `server.py`):
 local accounts, passkeys, Google and Apple sign-in, the app token exchange, provider settings, first admin,
 sessions, invites, camera groups and grants, sharing, tickets, the audit log, route enforcement and no CORS, the
-move from pairing keys. **Not built:** the setup wizard endpoints (`/api/setup/{flow}…`) and remote access.
+move from pairing keys, the setup wizard endpoints, the health panel and remote access (its lock-down check).
 Passkeys, Google and Apple are tested against stand-ins (a software authenticator, a fake provider): **never tried
 with a real device, Google account or Apple developer account.**
 Where the build added to or settled something this document left open, it says so under
@@ -634,3 +634,24 @@ Details the first build settled (G3):
 - **Screens.** `#/account` (name, password, passkeys, linked sign-ins, devices, sign out) and `#/household` (admins:
   people, invites, camera groups, grants, app pairing codes, public address, Google and Apple keys, password and passkey
   switches; managers: share a group view-only).
+- **Setup wizards (G6–G10).** Endpoints as drawn above, admin-only; the `hub-install` flow is also open before the first
+  admin exists, from the home network only. Manual steps are `console`, `developer`, `tunnel`, `tailnet`,
+  `funnel-or-private`. Checks are synchronous (no 202). Checking a step again sends the later ones back to `todo`.
+  `GET …/{step}/plan` also says `manual`. What each check does: `docker` (runs in a container: `/.dockerenv`, the cgroup,
+  or `LOOKABOUT_IN_CONTAINER`), `container` (go2rtc is up), `volume` (data folder writable, 1 GB free), `mdns` (announced),
+  `first-admin`; `public-url` (https, a real domain, not an IP or `.local`); `client`, `identifiers`, `key` (validate and store
+  encrypted, never echo); `discovery` (fetches Google's discovery document, compares the endpoints the hub uses),
+  `token-endpoint` (a signed request to Apple with a made-up code; `invalid_client` is a fail, anything else a pass),
+  `test-sign-in` (the admin has linked that provider; an admin may start a link before the provider is switched on, which is
+  the test); `certificate` (TLS handshake to the public address; the Tailscale flow gives its address here),
+  `reach-self` (asks the public address for `/api/hub` and compares the hub id), `locked-down` (below).
+- **Switching Google or Apple on** (`PUT /api/admin/auth/providers`) now needs that flow to have passed (409 names the step).
+- **Lock-down** (`locked-down`): every admin has a passkey or a 14+ character password; a stranger on the loopback address
+  gets 401/423 from the camera, event, stream, WebRTC, clip, settings, USB and household routes; a request with a foreign
+  `Origin` gets no `Access-Control-*` header; ports 1984 and 8554 do not accept connections on the machine's network
+  addresses. Passing turns remote access on (sessions 7 days). `POST /api/admin/remote/off` turns it off and sends the
+  lock-down step back to `todo`.
+- **Health.** `GET /api/admin/health` → `{ state, checks: [{ id, title, state: ok|warn|bad, detail, flow? }], flows }`.
+  While remote access is on it re-runs the lock-down checks and reports `bad` if one stopped holding.
+- **Install.** `hub/install.sh` (and the docker-compose file reading `.env`); the Pages site's install page only makes the
+  text to copy.

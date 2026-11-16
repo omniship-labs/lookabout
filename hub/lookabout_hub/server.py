@@ -32,6 +32,7 @@ from .bridge import BridgeError
 from .cameras import BadCamera, clean_camera, public_camera, usb_cameras
 from .discovery import local_addresses
 from .oidc import Federation, SignInError, safe_return
+from .setup import Setup
 from .vault import Vault
 from . import webauthn
 from .page import PAGE
@@ -48,6 +49,10 @@ class Hub:
         self.web_dir = web_dir if web_dir and os.path.isfile(os.path.join(web_dir, "index.html")) else None   # the built web app
         self.accounts = accounts or Accounts(store)
         self.federation = federation or Federation(self.accounts, Vault(os.path.join(data_dir, "keys")))
+        self.setup = Setup(self)                 # the setup wizards' checks and progress
+        self.federation.gate = lambda provider: self.setup.missing(provider)
+        self.listening = None                    # (host, port) once the server is bound, for the hub's own self-checks
+        self.mdns_name = None                    # the name announced on the network, if any
         self.name, self.port, self.data_dir = name, port, data_dir
         self.clips = clips            # recordings and event clips
         self.watchers = None          # recording, motion and cry workers, set once the hub is built
@@ -365,8 +370,20 @@ def make_handler(hub):
                 case ("POST", "pair"):
                     return self._pair()
 
+            if len(route) >= 3 and route[1] == "setup" and route[2] not in ("state", "first-admin"):
+                return self._setup_route(route)
+            if route == ("GET", "setup"):
+                return self._setup_route(route)
+
             who = self._who(self._ticket_camera(route))
             match route:
+                case ("GET", "admin", "health"):
+                    self._admin(who)
+                    return self._json(hub.setup.health())
+                case ("POST", "admin", "remote", "off"):
+                    self._admin(who)
+                    hub.setup.turn_off_remote(who.member)
+                    return self._json({"remote": False})
                 case ("POST", "auth", "logout"):
                     self._member(who)
                     accounts.end_session(who.session["id"])
@@ -408,6 +425,8 @@ def make_handler(hub):
                     return self._json({"removed": credential_id})
                 case ("POST", "me", "link", ("google" | "apple") as provider):
                     self._member(who)
+                    if not hub.federation.enabled(provider):
+                        self._admin(who)               # before it is switched on, only an admin may try it (the wizard's test)
                     return self._provider_login(provider, who.member["id"])
                 case ("DELETE", "me", "link", ("google" | "apple") as provider):
                     self._member(who)
@@ -587,6 +606,28 @@ def make_handler(hub):
                 case ("GET", "clips", name):
                     return self._clip_camera(name)
             return None
+
+        def _setup_route(self, route):
+            """The setup wizards. Admins only, except the hub-install flow before the first admin exists (home network only)."""
+            flow = route[2] if len(route) > 2 else None
+            open_here = flow == "hub-install" and hub.accounts.setup_needed() and self._on_home_network()
+            who = None if open_here else self._who()
+            if who is not None:
+                self._admin(who)
+            member = who.member if who else None
+            setup = hub.setup
+            match route:
+                case ("GET", "setup"):
+                    return self._json(setup.summary())
+                case ("GET", "setup", name):
+                    return self._json(setup.flow(name))
+                case ("GET", "setup", name, step, "plan"):
+                    return self._json(setup.plan(name, step))
+                case ("POST", "setup", name, step, "verify"):
+                    return self._json(setup.verify(name, step, self._data(), member))
+                case ("PUT", "setup", name, step):
+                    return self._json(setup.confirm(name, step, self._data().get("state"), member))
+            raise Reply(404, "Not found.")
 
         def _manage_group(self, who, group_id):
             """Admins, or members who manage the group, may share it. Anyone else gets a 404."""
@@ -932,4 +973,6 @@ class Server(ThreadingHTTPServer):
 
 
 def make_server(hub, host="0.0.0.0"):
-    return Server((host, hub.port), make_handler(hub))
+    server = Server((host, hub.port), make_handler(hub))
+    hub.listening = server.server_address
+    return server

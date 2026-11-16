@@ -19,7 +19,7 @@ from . import VERSION
 from .bridge import Go2rtc
 from .clips import Clips
 from .cry import load_classifier
-from .discovery import advertise
+from .discovery import NOT_ANNOUNCED, advertise
 from .monitor import Monitor
 from .pairing import Pairing
 from .server import Hub, make_server
@@ -67,6 +67,8 @@ def main():
         hub.watchers = Watchers(hub)
         hub.watchers.sync()
     withdraw = (lambda: None) if args.no_mdns else advertise(args.name, store.hub_id(), args.port, VERSION)
+    if withdraw is not NOT_ANNOUNCED and not args.no_mdns:
+        hub.mdns_name = f"{socket.gethostname().split('.')[0]}.local"
 
     def stop(*_):
         raise KeyboardInterrupt

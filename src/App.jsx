@@ -13,6 +13,7 @@ import { PairCode, PairDone, PairScan } from './screens/Pairing.jsx';
 import { Flash } from './screens/Flash.jsx';
 import { Account } from './screens/Account.jsx';
 import { Household } from './screens/Household.jsx';
+import { InstallHub, RemoteChoice, SetupFlow, SetupHealth } from './screens/Setup.jsx';
 
 function screenFor(path, params) {
   const parts = path.split('/').filter(Boolean);
@@ -43,6 +44,12 @@ function screenFor(path, params) {
       return <Account />;
     case 'household':
       return <Household />;
+    case 'install':
+      return <InstallHub />;
+    case 'setup':
+      if (!b) return <SetupHealth />;
+      // "remote" asks which way; the two remote guides are their own pages.
+      return b === 'remote' ? <RemoteChoice /> : <SetupFlow key={b} flow={b} />;
     case 'signin':
       // The hub sends people back here after Google or Apple sign-in, with what went wrong in the address.
       return <HubSetup address={params.address} code={params.code} error={params.message} />;

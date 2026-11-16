@@ -12,10 +12,14 @@ cd ..                                           # then, in order, each against t
 SCR=$SCR node tests/browser/1-first-admin-household.cjs   # first admin, group, invite (writes admin-state.json, invite.txt; script 3 signs in again with the same fixed smoke-test credentials)
 SCR=$SCR node tests/browser/2-passkey-and-invite.cjs      # passkey (virtual authenticator), join by invite, sign out
 SCR=$SCR node tests/browser/3-google-redirect.cjs         # the "Continue with Google" redirect (no Google account needed)
+# 4 needs a FRESH hub started with LOOKABOUT_IN_CONTAINER=1 (it makes its own first admin):
+SCR=$SCR node tests/browser/4-setup-wizards.cjs           # install helper, install check, health panel, Google and Cloudflare wizards
 ```
 
 `playwright` has to be resolvable (`npm i -D playwright`, or run where it is installed globally).
 A hub that already has an admin needs a fresh `--data` folder to run script 1 again.
+
+Script 4's Google discovery step contacts accounts.google.com for real if the machine can reach it (and says so if not).
 
 What they do **not** cover: the look (they were first run with stand-in design tokens), a real Google or
 Apple sign-in, a hardware passkey, Safari or Firefox, or video.
