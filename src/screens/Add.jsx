@@ -7,7 +7,7 @@ import { signInOptions } from '../lib/household.js';
 import { passkeyAddressOk, passkeysSupported, signInWithPasskey } from '../lib/passkey.js';
 import { blockedByHttps, codeReady, findHub, typedAddress } from '../lib/hubPairing.js';
 import { addGroups, connectKinds, guidedFlows, nestCams, ringCams, teslaClips, wyzeCams } from '../lib/sampleData.js';
-import { BackBar, CheckMark, Chip, Cta, Eyebrow, Field, Group, Note, Page, Pill, Row, RowLink, RowText, Spacer, Steps, display, mono } from '../components/ui.jsx';
+import { BackBar, CheckMark, Cta, Eyebrow, Field, Group, Note, Page, Pill, Row, RowLink, RowText, Spacer, Steps, display, mono } from '../components/ui.jsx';
 import { ClipRow, VideoTile } from '../components/viewer.jsx';
 import { Wizard } from '../components/Wizard.jsx';
 
@@ -476,7 +476,7 @@ const pairSteps = [
       ['Copy the ', ['hub'], ' folder from the Lookabout repository to the Pi (64-bit Raspberry Pi OS).'],
       'In that folder, run the installer. It sets up Docker if you let it, builds the hub (several minutes on a Pi) and prints the address and a setup code.',
     ],
-    copy: [{ label: 'COMMAND', text: './install.sh' }],
+    copy: [{ label: 'Command', text: './install.sh' }],
     links: [{ label: 'Make the exact command', href: '#/install' }, { label: 'Hub install guide', href: HUB_README }],
     confirmLabel: 'The hub is running',
   },
@@ -576,7 +576,7 @@ const pairSteps = [
             error={(first || joining) && values.password ? passwordProblem(values.password) || undefined : undefined}
           />
           {!first && !joining && !values.code ? (
-            <Chip onClick={() => set({ invite: ' ' })}>I have an invite link</Chip>
+            <button type="button" onClick={() => set({ invite: ' ' })} style={{ minHeight: 44, border: 0, background: 'transparent', font: '500 14px var(--font-sans)', color: 'var(--text-muted)', textDecoration: 'underline', textUnderlineOffset: 3 }}>I have an invite link</button>
           ) : null}
         </>
       );

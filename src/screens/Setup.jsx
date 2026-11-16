@@ -10,7 +10,8 @@ import {
 } from '../lib/setupFlows.js';
 import { DEFAULT_HUB_NAME, DEFAULT_PORT, copyCommand, hubNameProblem, hubUrl, installCommand, portProblem, badUsb } from '../lib/hubInstall.js';
 import { Wizard, CopyBox } from '../components/Wizard.jsx';
-import { BackBar, Chip, Cta, Field, Group, Note, Page, Pill, Row, RowLink, RowText, Switch, display } from '../components/ui.jsx';
+import { ChevronDownIcon } from '../components/icons.jsx';
+import { BackBar, Chip, Cta, Field, Group, Note, Page, Row, RowLink, RowText, Switch, display } from '../components/ui.jsx';
 
 /** The hub to talk to: the signed-in one, or (before anyone has signed in) the one serving this page. */
 function useSetupHub() {
@@ -28,7 +29,7 @@ function useSetupHub() {
   return { hub: own ? { address: own.address, token: '', member: null } : null, loading: false };
 }
 
-const toneFor = { ok: 'success', warn: 'caution', bad: 'caution' };
+const dotFor = { ok: 'var(--osl-success)', warn: 'var(--osl-warning)', bad: 'var(--osl-danger)' };
 
 /** How the hub is set up: a verdict, then only what needs attention. The rest is one tap away. */
 export function SetupHealth() {
@@ -68,8 +69,9 @@ export function SetupHealth() {
                 const to = healthLink(c);
                 const row = (
                   <>
+                    <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 4, flexShrink: 0, marginRight: 12, background: dotFor[c.state] }} />
                     <RowText title={c.title} sub={c.detail} />
-                    {c.state !== 'ok' ? <Pill small tone={toneFor[c.state]}>{HEALTH_LABEL[c.state]}</Pill> : null}
+                    <span className="lk-sr">{HEALTH_LABEL[c.state]}</span>
                   </>
                 );
                 return to && c.state !== 'ok' ? <Row key={c.id} to={to}>{row}</Row> : <Row key={c.id}>{row}</Row>;
@@ -265,8 +267,11 @@ export function InstallHub() {
       <BackBar to="/add" title="Install the hub" />
       <Note size={13}>For a Raspberry Pi 4 or 5 on your home network, running the 64-bit Raspberry Pi OS. This page only makes the commands to copy.</Note>
       <Field label="Name shown in Lookabout" value={name} maxLength={40} onChange={(e) => setName(e.target.value)} error={nameProblem || undefined} />
-      <details>
-        <summary style={{ minHeight: 44, display: 'flex', alignItems: 'center', fontSize: 14, fontWeight: 600, color: 'var(--text-strong)', cursor: 'pointer' }}>More options</summary>
+      <details className="lk-fold">
+        <summary className="lk-sum" style={{ listStyle: 'none', minHeight: 44, display: 'flex', alignItems: 'center', fontSize: 14, fontWeight: 600, color: 'var(--text-strong)', cursor: 'pointer' }}>
+          More options
+          <span style={{ color: 'var(--text-muted)', display: 'flex', marginLeft: 'auto' }}><ChevronDownIcon size={16} /></span>
+        </summary>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingTop: 6 }}>
           <Field label="Port" value={port} inputMode="numeric" onChange={(e) => setPort(e.target.value)} error={bad || undefined} />
           <Field label="USB webcams on the Pi" monoFont size={14} value={usb} placeholder="/dev/video0" autoCapitalize="off" onChange={(e) => setUsb(e.target.value)}
@@ -275,9 +280,9 @@ export function InstallHub() {
           <Field label="The Pi’s address" monoFont size={14} value={host} autoCapitalize="off" onChange={(e) => setHost(e.target.value)} />
         </div>
       </details>
-      <CopyBox label="1 · ON YOUR COMPUTER, IN THE LOOKABOUT FOLDER" text={copyCommand(host.trim() || 'raspberrypi.local')} />
-      {command ? <CopyBox label="2 · ON THE PI" text={`cd lookabout-hub && ${command}`} /> : <Note size={13} style={{ color: 'var(--osl-danger)' }}>Fix the fields above to get the command.</Note>}
-      <CopyBox label="3 · OPEN IN A BROWSER" text={hubUrl(host.trim() || 'raspberrypi.local', Number(port) || DEFAULT_PORT)} />
+      <CopyBox label="1. On your computer, in the Lookabout folder" text={copyCommand(host.trim() || 'raspberrypi.local')} />
+      {command ? <CopyBox label="2. On the Pi" text={`cd lookabout-hub && ${command}`} /> : <Note size={13} style={{ color: 'var(--osl-danger)' }}>Fix the fields above to get the command.</Note>}
+      <CopyBox label="3. Open in a browser" text={hubUrl(host.trim() || 'raspberrypi.local', Number(port) || DEFAULT_PORT)} />
       <Note size={13}>The installer builds the hub (several minutes on a Pi), then prints a setup code. Type it there to make the first admin.</Note>
       <Cta href="#/add/hub">I’ve done this</Cta>
     </Page>

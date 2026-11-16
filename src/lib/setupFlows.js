@@ -23,7 +23,7 @@ export const FLOW_TITLES = {
   apple: 'Continue with Apple',
 };
 
-const redirect = (provider) => (v) => [{ label: 'REDIRECT ADDRESS', text: `${(v.public_url || 'https://hub.example.com').replace(/\/$/, '')}/api/auth/callback/${provider}` }];
+const redirect = (provider) => (v) => [{ label: 'Redirect address', text: `${(v.public_url || 'https://hub.example.com').replace(/\/$/, '')}/api/auth/callback/${provider}` }];
 const publicUrlField = { key: 'public_url', label: 'The hub’s public https address', placeholder: 'https://hub.example.com', required: true, mono: true };
 
 const publicUrlStep = {
@@ -91,7 +91,7 @@ const DEFS = {
         ['Open the Services ID, tick Sign in with Apple, ', ['Configure'], ', and add your domain and the return address below.'],
         'The Team ID is shown under your name at the top right.',
       ],
-      copy: (v) => [{ label: 'RETURN URL', text: `${(v.public_url || 'https://hub.example.com').replace(/\/$/, '')}/api/auth/callback/apple` }],
+      copy: (v) => [{ label: 'Return URL', text: `${(v.public_url || 'https://hub.example.com').replace(/\/$/, '')}/api/auth/callback/apple` }],
       fields: [
         { key: 'services_id', label: 'Services ID', mono: true, required: true, placeholder: 'dev.example.lookabout' },
         { key: 'team_id', label: 'Team ID', mono: true, required: true, placeholder: '10 letters and digits' },
@@ -158,7 +158,7 @@ const DEFS = {
         [['Public (anyone with the link, no Tailscale needed): '], ['tailscale funnel --bg 8787']],
         'Either gives you an https address like https://pi.your-tailnet.ts.net. Use the one you want.',
       ],
-      copy: () => [{ label: 'PRIVATE', text: 'sudo tailscale serve --bg 8787' }, { label: 'PUBLIC', text: 'sudo tailscale funnel --bg 8787' }],
+      copy: () => [{ label: 'Private (only your own devices)', text: 'sudo tailscale serve --bg 8787' }, { label: 'Public (anyone with the link)', text: 'sudo tailscale funnel --bg 8787' }],
       manual: true,
       confirmLabel: 'It’s running',
     },

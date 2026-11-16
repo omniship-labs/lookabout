@@ -160,3 +160,11 @@ a:hover {
     animation: none;
   }
 }
+
+/* A folded list (the Wizard's finished steps): no native marker, the chevron turns when open. */
+.lk-sum::-webkit-details-marker {
+  display: none;
+}
+.lk-fold[open] > .lk-sum > span:last-child {
+  transform: rotate(180deg);
+}
