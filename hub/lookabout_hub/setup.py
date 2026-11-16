@@ -452,8 +452,11 @@ class Setup:
             add("remote", "Remote access", "ok", "Off. The hub is only reachable on your home network.")
         key = os.path.join(hub.data_dir, "keys", "vault.key")
         mode = os.stat(key).st_mode & 0o777 if os.path.exists(key) else None
-        add("vault", "Provider secrets key", "ok" if mode == 0o600 else "warn" if mode is not None else "ok",
-            "Key file is private (mode 600)." if mode == 0o600 else f"Key file mode is {oct(mode)}; it should be 600." if mode is not None else "No secrets stored yet.")
+        private = mode is not None and mode & 0o077 == 0          # nobody but the hub's own user can read or write it
+        add("vault", "Provider secrets key", "ok" if private or mode is None else "warn",
+            "Key file is private to the hub's user." if private
+            else f"Key file mode is {oct(mode)}: other users on this machine could read it. It should be 600." if mode is not None
+            else "No secrets stored yet.")
         free = shutil.disk_usage(hub.data_dir).free
         add("disk", "Disk space", "ok" if free >= MIN_FREE_BYTES else "warn", f"{free // (1 << 30)} GB free.", "hub-install")
         add("video", "Video bridge", "ok" if hub.bridge.available else "bad", "go2rtc is running." if hub.bridge.available else "go2rtc isn't running: no video, recording or detection.", "hub-install")

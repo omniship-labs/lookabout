@@ -497,11 +497,23 @@ class HealthTest(SetupCase):
     def test_the_vault_key_file(self):
         self.admin_with()
         self.hub.federation.update({"google": {"client_id": CLIENT_ID, "client_secret": "s"}})
-        by = {c["id"]: c for c in self.call("GET", "/api/admin/health", token=self.admin)[1]["checks"]}
-        self.assertEqual(by["vault"]["state"], "ok")
-        os.chmod(os.path.join(self.dir.name, "keys", "vault.key"), 0o640)      # looser than 600, still not world-readable
-        by = {c["id"]: c for c in self.call("GET", "/api/admin/health", token=self.admin)[1]["checks"]}
-        self.assertEqual(by["vault"]["state"], "warn")
+
+        def vault():
+            return {c["id"]: c for c in self.call("GET", "/api/admin/health", token=self.admin)[1]["checks"]}["vault"]
+        self.assertEqual(vault()["state"], "ok")                    # the real file, as the hub made it
+        real_stat = os.stat
+
+        def with_mode(mode):
+            def fake(path, *a, **k):
+                got = real_stat(path, *a, **k)
+                return mock.Mock(st_mode=0o100000 | mode) if str(path).endswith("vault.key") else got
+            return fake
+        for mode, state in ((0o600, "ok"), (0o400, "ok"), (0o640, "warn"), (0o604, "warn"), (0o660, "warn"), (0o777, "warn")):
+            with mock.patch("lookabout_hub.setup.os.stat", with_mode(mode)):
+                got = vault()
+            self.assertEqual(got["state"], state, oct(mode))
+        with mock.patch("lookabout_hub.setup.os.stat", with_mode(0o644)):
+            self.assertIn("other users on this machine", vault()["detail"])
 
 
 class NetTest(unittest.TestCase):
