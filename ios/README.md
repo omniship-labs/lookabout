@@ -14,6 +14,16 @@ Standard screens use stock SwiftUI (`Form`, `Picker`, `Toggle`, `TabView`,
 `NavigationStack`); only what Lookabout introduces is drawn by hand
 (wordmark, video tiles, sound meter, follow-sound pill, hold-to-talk).
 
+## Tests
+
+```sh
+cd ios
+xcodegen generate
+xcodebuild test -project Lookabout.xcodeproj -scheme Lookabout -destination 'platform=iOS Simulator,name=iPhone 16'   # pick any installed iPhone
+```
+
+They cover the pure hub sign-in logic (PKCE, links, errors, `/api/me` access); CI runs them.
+
 ## Layout
 
 ```

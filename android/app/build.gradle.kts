@@ -52,4 +52,7 @@ dependencies {
     // USB flashing of ESP32 boards plugged into the phone.
     implementation("com.github.mik3y:usb-serial-for-android:3.8.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
+    // JVM unit tests for the hub sign-in logic (app/src/test). Android's own org.json is a stub there.
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

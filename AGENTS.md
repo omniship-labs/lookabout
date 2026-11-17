@@ -35,6 +35,8 @@ must stay green. Don't skip, disable or loosen a test to get a change through.
 | Web app logic | `tests/*.test.mjs` (`node:test`) | `npm test`; `npm run coverage` for the floor |
 | Home hub | `hub/tests/` | `cd hub && python3 -m coverage run -m unittest discover -s tests && python3 -m coverage report` |
 | Pi camera node | `firmware/rpi/tests/` | `cd firmware/rpi && python3 -m coverage run -m unittest discover -s tests && python3 -m coverage report` |
+| Android app logic | `android/app/src/test/` (JUnit, JVM) | `cd android && gradle :app:testDebugUnitTest` |
+| iOS app logic | `ios/LookaboutTests/` (XCTest) | `cd ios && xcodegen generate && xcodebuild test -project Lookabout.xcodeproj -scheme Lookabout -destination 'platform=iOS Simulator,name=<an iPhone>'` |
 | ESP32 firmware | `firmware/esp32/qemu/test_board.py` (the firmware running in QEMU) | see `firmware/esp32/qemu/README.md` |
 
 - **Web:** logic that can run without a browser goes in `src/lib/` with no
@@ -52,8 +54,11 @@ must stay green. Don't skip, disable or loosen a test to get a change through.
 - **Things a test can't reach** (screens in a browser, a real board, a Pi, a
   phone) are checked by hand. Until someone has, say plainly in the PR and on
   the issue that it hasn't been seen working.
+- **Native apps:** logic that needs no UI, storage or network (hub sign-in so far: `hub/HubAuth.kt`,
+  `Hub/HubAuth.swift`) lives in plain files with tests in both apps, run by the `android` and `ios` CI
+  jobs. Keep new native logic that way.
 - Not tested yet, and why: the screens and components (JSX; checked in a
-  browser), the Android and iOS apps (no test targets), `store.js`, `flash.js`
+  browser), the native apps' screens, `HubClient`, `HubSession` and the token vaults (UI, network, Keychain/Keystore), `store.js`, `flash.js`
   and other React or browser-only parts of `src/lib`, the hub's mDNS and the
   ffmpeg commands its workers run, and on the ESP32 the Wi-Fi radio, the USB
   webcam and USB flashing, which need a board.

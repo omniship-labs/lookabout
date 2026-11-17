@@ -41,6 +41,9 @@ targets:
         # App Review Guideline 2.5.4: justify this in review notes at submission.
         UIBackgroundModes:
           - audio
+    scheme:
+      testTargets:
+        - LookaboutTests
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.omniship.lookabout
@@ -50,3 +53,17 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: NO
+
+  # Unit tests for the pure logic (hub sign-in: PKCE, links, errors, access). Run in CI.
+  LookaboutTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: LookaboutTests
+    dependencies:
+      - target: Lookabout
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.omniship.lookabout.tests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "5.0"

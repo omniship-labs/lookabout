@@ -11,6 +11,15 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 There is no Gradle wrapper checked in yet; open the folder in Android Studio
 or use a local Gradle.
 
+## Tests
+
+```sh
+cd android
+gradle :app:testDebugUnitTest      # unit tests (app/src/test)
+```
+
+They cover the pure hub sign-in logic (PKCE, links, errors, `/api/me` access); CI runs them.
+
 ## Layout
 
 ```
