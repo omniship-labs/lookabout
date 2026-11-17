@@ -3,11 +3,14 @@ import SwiftUI
 @main
 struct LookaboutApp: App {
     @StateObject private var store = AppStore()
+    @StateObject private var hub = HubSession()
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(store)
+                .environmentObject(hub)
+                .onOpenURL { hub.handle($0) }
                 .preferredColorScheme(store.colorScheme)
         }
     }

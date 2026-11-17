@@ -14,6 +14,16 @@ Standard screens use stock SwiftUI (`Form`, `Picker`, `Toggle`, `TabView`,
 `NavigationStack`); only what Lookabout introduces is drawn by hand
 (wordmark, video tiles, sound meter, follow-sound pill, hold-to-talk).
 
+## Tests
+
+```sh
+cd ios
+xcodegen generate
+xcodebuild test -project Lookabout.xcodeproj -scheme Lookabout -destination 'platform=iOS Simulator,name=iPhone 16'   # pick any installed iPhone
+```
+
+They cover the pure hub sign-in logic (PKCE, links, errors, `/api/me` access); CI runs them.
+
 ## Layout
 
 ```
@@ -25,6 +35,10 @@ Lookabout/
   Camera/
     CameraSession.swift       AVFoundation capture + self-view
     CryDetector.swift         on-device cry detection (SoundAnalysis)
+  Hub/HubAuth.swift           pure sign-in logic: PKCE, lookabout:// links, hub errors, /api/me access (no UI, no network)
+  Hub/HubClient.swift         the hub's sign-in, /api/me, devices and ticket calls (bearer header only)
+  Hub/HubSession.swift        Keychain token, sign-in flows, 401 → back to sign-in
+  Hub/HubViews.swift          Settings → Home hub: sign in, who you are, devices, sign out
   Net/MJPEGStream.swift       ESP32 / Pi video on the home network + Bonjour discovery
   Views/                      Start, camera setup/streaming/denied, viewer tabs, add camera, settings
 ```
@@ -40,11 +54,17 @@ Lookabout/
 - **Firmware updates over Wi-Fi** for ESP32 cameras, from the camera's screen,
   using the image packaged by `npm run firmware:package`. iOS can't flash over
   USB (no USB serial access); do the first flash from the web page or Android.
+- **Home hub sign-in** (Settings → Home hub; contract in `docs/hub-auth.md`, issue #69): pairing code
+  (or `lookabout://hub?address=…&code=…` from an admin's QR), email and password, and Google or Apple
+  in a browser sheet (`ASWebAuthenticationSession`, PKCE). The token is kept in the Keychain. A 401
+  sends you back to sign-in; sign out and ending other devices work. Passkeys are not offered in the
+  app: a passkey is tied to the hub's address and a self-hosted hub can't publish the associated-domains
+  file iOS needs, so use a pairing code or Google/Apple.
 - Everything else the viewer shows is the design's sample content.
 
 ## Not yet
 
-- Pairing, peer-to-peer streaming, the home hub, push alerts to viewers.
+- Hub cameras, events and video in the app (#23; `HubMe.canSee`/`canManage` and `HubClient.ticket` are ready for it), peer-to-peer streaming, push alerts to viewers.
 - Motion detection and zones, lullaby, night light, clips.
 - The design's fonts (Space Grotesk, IBM Plex): system fonts stand in until
   the font files are bundled.

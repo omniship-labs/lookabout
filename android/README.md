@@ -11,12 +11,26 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 There is no Gradle wrapper checked in yet; open the folder in Android Studio
 or use a local Gradle.
 
+## Tests
+
+```sh
+cd android
+gradle :app:testDebugUnitTest      # unit tests (app/src/test)
+```
+
+They cover the pure hub sign-in logic (PKCE, links, errors, `/api/me` access); CI runs them.
+
 ## Layout
 
 ```
 app/src/main/java/dev/omniship/lookabout/
   MainActivity.kt            a device is a camera or a viewer
   model/AppStore.kt          settings (SharedPreferences), cameras, the design's sample data
+  hub/HubAuth.kt             pure sign-in logic: PKCE, lookabout:// links, hub errors, /api/me access (no Android, no network)
+  hub/HubClient.kt           the hub's sign-in, /api/me, devices and ticket calls (bearer header only)
+  hub/TokenVault.kt          the token, encrypted with an Android Keystore AES-GCM key
+  hub/HubSession.kt          sign-in flows, Custom Tabs, 401 → back to sign-in
+  ui/screens/HubScreens.kt   Settings → Home hub: sign in, who you are, devices, sign out
   net/MjpegStream.kt         ESP32 / Pi video on the home network + NSD discovery
   ui/theme/Theme.kt          OmniShip Labs tokens (light/dark)
   ui/Components.kt           wordmark, video tile, sound meter, pills, buttons
@@ -33,12 +47,17 @@ app/src/main/java/dev/omniship/lookabout/
   of a board plugged into the phone (Cameras → + → Flash over USB). The USB
   flasher speaks the ESP32 bootloader protocol directly (`net/Firmware.kt`)
   and has not been run against a board yet.
+- **Home hub sign-in** (Settings → Home hub; contract in `docs/hub-auth.md`, issue #69): pairing code
+  (or `lookabout://hub?address=…&code=…` from an admin's QR), email and password, and Google or Apple
+  in a Custom Tab (PKCE). The token is kept encrypted with a Keystore key. A 401 sends you back to
+  sign-in; sign out and ending other devices work. Passkeys are not offered in the app (they are tied
+  to the hub's address and need a Digital Asset Links file on it); use a pairing code or Google/Apple.
 - Everything else the viewer shows is the design's sample content.
 
 ## Not yet
 
 - Cry detection (planned: on-device audio classifier), motion detection.
-- Pairing, peer-to-peer streaming, the home hub, push alerts.
+- Hub cameras, events and video in the app (#23; `HubMe.canSee`/`canManage` and `HubClient.ticket` are ready for it), peer-to-peer streaming, push alerts.
 - Streaming with the app in the background (needs a foreground service).
 - The design's fonts; release signing and Play Console setup
   (application ID `dev.omniship.lookabout`).

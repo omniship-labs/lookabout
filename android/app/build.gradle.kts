@@ -35,6 +35,8 @@ android {
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
+    // The system browser sheet for Google and Apple sign-in on the hub.
+    implementation("androidx.browser:browser:1.8.0")
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
@@ -50,4 +52,7 @@ dependencies {
     // USB flashing of ESP32 boards plugged into the phone.
     implementation("com.github.mik3y:usb-serial-for-android:3.8.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
+    // JVM unit tests for the hub sign-in logic (app/src/test). Android's own org.json is a stub there.
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }
