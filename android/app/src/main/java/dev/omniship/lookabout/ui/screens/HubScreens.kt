@@ -36,7 +36,7 @@ import dev.omniship.lookabout.ui.Eyebrow
 import dev.omniship.lookabout.ui.OutlineButton
 import dev.omniship.lookabout.ui.Pill
 import dev.omniship.lookabout.ui.PrimaryButton
-import dev.omniship.lookabout.ui.Radius
+import dev.omniship.lookabout.ui.theme.Radius
 import dev.omniship.lookabout.ui.card
 import dev.omniship.lookabout.ui.theme.LocalTokens
 import dev.omniship.lookabout.ui.theme.Palette
