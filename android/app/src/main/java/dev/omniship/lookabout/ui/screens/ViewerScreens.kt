@@ -69,6 +69,7 @@ import dev.omniship.lookabout.ui.LevelBar
 import dev.omniship.lookabout.ui.OutlineButton
 import dev.omniship.lookabout.ui.Pill
 import dev.omniship.lookabout.ui.PillTone
+import dev.omniship.lookabout.hub.HubSession
 import dev.omniship.lookabout.ui.PrimaryButton
 import dev.omniship.lookabout.ui.SoundMeter
 import dev.omniship.lookabout.ui.VideoTile
@@ -82,12 +83,13 @@ import dev.omniship.lookabout.ui.theme.Type
 private sealed interface Overlay {
     data object None : Overlay
     data object Add : Overlay
+    data object Hub : Overlay
     data class Detail(val camera: Camera) : Overlay
 }
 
 /** Viewer chrome: Live · Cameras · Events · Alerts. */
 @Composable
-fun ViewerScreen(store: AppStore) {
+fun ViewerScreen(store: AppStore, hub: HubSession) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var overlay by remember { mutableStateOf<Overlay>(Overlay.None) }
     BackHandler(enabled = overlay != Overlay.None) { overlay = Overlay.None }
@@ -125,12 +127,13 @@ fun ViewerScreen(store: AppStore) {
             Box(Modifier.fillMaxSize().padding(padding)) {
                 when (val o = overlay) {
                     Overlay.Add -> AddCamera(store) { overlay = Overlay.None }
+                    Overlay.Hub -> HubScreen(hub) { overlay = Overlay.None }
                     is Overlay.Detail -> CameraDetail(o.camera) { overlay = Overlay.None }
                     Overlay.None -> when (tab) {
                         0 -> Live()
                         1 -> Cameras(store, onAdd = { overlay = Overlay.Add }, onOpen = { overlay = Overlay.Detail(it) })
                         2 -> Events()
-                        else -> SettingsScreen(store)
+                        else -> SettingsScreen(store, hub, openHub = { overlay = Overlay.Hub })
                     }
                 }
             }
@@ -435,7 +438,7 @@ private fun Events() {
 // ---- Alerts & settings --------------------------------------------------------
 
 @Composable
-private fun SettingsScreen(store: AppStore) {
+private fun SettingsScreen(store: AppStore, hub: HubSession, openHub: () -> Unit) {
     val t = LocalTokens.current
     val s = store.settings
 
@@ -521,7 +524,7 @@ private fun SettingsScreen(store: AppStore) {
             toggle("Motion alerts", "Only inside drawn zones", s.motionAlerts) { store.update { copy(motionAlerts = it) } }
         }
         section("RECORDING") {
-            row("Home hub", "Live view works without it") { value("Not set up") }
+            row("Home hub", "Live view works without it", onClick = openHub) { value(hub.signIn?.hubName ?: "Not signed in") }
             row("Keep clips for", "Oldest clips delete first", onClick = {
                 store.update { copy(keepDays = next(listOf(7, 14, 30), keepDays)) }
             }) { value("${s.keepDays} days") }

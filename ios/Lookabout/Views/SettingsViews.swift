@@ -3,6 +3,7 @@ import SwiftUI
 /// 6 · Alerts & settings. Appearance here applies to the whole app.
 struct SettingsView: View {
     @EnvironmentObject private var store: AppStore
+    @EnvironmentObject private var hub: HubSession
 
     var body: some View {
         Form {
@@ -30,10 +31,14 @@ struct SettingsView: View {
             }
 
             Section("Recording") {
-                LabeledContent {
-                    Text("Not set up")
+                NavigationLink {
+                    HubAccountView()
                 } label: {
-                    label("Home hub", "Live view works without it")
+                    LabeledContent {
+                        Text(hub.signIn?.hubName ?? "Not signed in")
+                    } label: {
+                        label("Home hub", "Live view works without it")
+                    }
                 }
                 Picker(selection: $store.settings.keepDays) {
                     ForEach([7, 14, 30], id: \.self) { Text("\($0) days").tag($0) }

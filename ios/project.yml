@@ -24,6 +24,11 @@ targets:
         NSCameraUsageDescription: "Lookabout uses the camera when you set this device up as a camera, and to scan a pairing code. Video goes only to your paired viewers."
         NSMicrophoneUsageDescription: "Lookabout listens for crying and sends sound to your paired viewers when this device is a camera, and sends your voice when you hold to talk."
         NSLocalNetworkUsageDescription: "Lookabout finds and connects to your cameras on your home network."
+        # lookabout://hub?address=…&code=… (an admin's QR) and the end of a browser sign-in.
+        CFBundleURLTypes:
+          - CFBundleURLName: dev.omniship.lookabout
+            CFBundleURLSchemes:
+              - lookabout
         NSBonjourServices:
           - _lookabout._tcp
         # ESP32 and Raspberry Pi cameras serve plain http on the home network.
