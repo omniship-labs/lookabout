@@ -76,7 +76,8 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - uses: android-actions/setup-android@v3
+      # The runner has an Android SDK (ANDROID_HOME); accept its licences so Gradle can fetch platform 36.
+      - run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.13"
